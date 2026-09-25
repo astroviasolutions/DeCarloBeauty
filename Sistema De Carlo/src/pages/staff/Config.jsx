@@ -1,0 +1,158 @@
+import { useState } from 'react'
+import { BellRing, Copy, ExternalLink, EyeOff, MessageCircle, RotateCcw, Save, Tv } from 'lucide-react'
+import { BRAND } from '../../config/brand'
+import { MESSAGES } from '../../lib/messages'
+import { NOTIFY_DEFAULTS } from '../../components/Notifier'
+import { Link } from 'react-router-dom'
+import Importer from '../../components/Importer'
+import { useStore } from '../../state/Store'
+import { Button, Card, Field } from '../../components/ui'
+import { maskPhone, onlyDigits, WEEKDAYS } from '../../lib/utils'
+
+export default function Config() {
+  const { data, actions, isDemo } = useStore()
+  const [s, setS] = useState(() => JSON.parse(JSON.stringify(data.settings)))
+  const link = `${location.origin}${location.pathname}#/`
+
+  const setDay = (d, v) => setS({ ...s, hours: { ...s.hours, [d]: v } })
+  const [msgKey, setMsgKey] = useState(MESSAGES[0].key)
+  const cur = MESSAGES.find((m) => m.key === msgKey)
+  const setMsg = (k, v) => setS({ ...s, messages: { ...(s.messages || {}), [k]: v } })
+  const notify = { ...NOTIFY_DEFAULTS, ...(s.notify || {}) }
+  const setNotify = (k, v) => setS({ ...s, notify: { ...notify, [k]: v } })
+  const privacy = { hideContacts: true, ...(s.privacy || {}) }
+  const page = s.page || {}
+  const setPage = (k, v) => setS({ ...s, page: { ...page, [k]: v } })
+  const perm = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
+
+  return (
+    <div>
+      <div className="page-head">
+        <div><p className="eyebrow">Sua clínica</p><h1 className="page-title">Ajustes</h1></div>
+        <Button icon={Save} onClick={() => actions.saveSettings({ ...s, whatsapp: onlyDigits(s.whatsapp), slotStep: Number(s.slotStep), bookingDaysAhead: Number(s.bookingDaysAhead), birthdayDiscount: Number(s.birthdayDiscount || 0), loyalty: { ...s.loyalty, goal: Number(s.loyalty?.goal || 10) } })}>Salvar</Button>
+      </div>
+      <div className="grid-2">
+        <Card title="Dados da clínica">
+          <div className="form-grid">
+            <Field label="Nome exibido no app" className="span-2"><input value={s.shopName} onChange={(e) => setS({ ...s, shopName: e.target.value })} /></Field>
+            <Field label="WhatsApp da clínica" hint="Recebe as confirmações dos clientes"><input inputMode="tel" value={maskPhone(s.whatsapp)} onChange={(e) => setS({ ...s, whatsapp: e.target.value })} /></Field>
+            <Field label="Instagram"><input value={s.instagram} onChange={(e) => setS({ ...s, instagram: e.target.value })} /></Field>
+            <Field label="Endereço" className="span-2"><input value={s.address} onChange={(e) => setS({ ...s, address: e.target.value })} /></Field>
+            <Field label="Intervalo da agenda"><select value={s.slotStep} onChange={(e) => setS({ ...s, slotStep: e.target.value })}>{[15, 20, 30, 45, 60].map((m) => <option key={m} value={m}>{m} min</option>)}</select></Field>
+            <Field label="Agenda aberta para"><select value={s.bookingDaysAhead} onChange={(e) => setS({ ...s, bookingDaysAhead: e.target.value })}>{[7, 14, 21, 30, 60].map((m) => <option key={m} value={m}>{m} dias</option>)}</select></Field>
+            <Field label="Pausa almoço (opcional)" className="span-2">
+              <div className="range">
+                <input type="time" value={s.breakTime?.[0] || ''} onChange={(e) => setS({ ...s, breakTime: e.target.value ? [e.target.value, s.breakTime?.[1] || '13:00'] : null })} />
+                <input type="time" value={s.breakTime?.[1] || ''} disabled={!s.breakTime} onChange={(e) => setS({ ...s, breakTime: [s.breakTime[0], e.target.value] })} />
+              </div>
+            </Field>
+          </div>
+        </Card>
+        <Card title="Horário de funcionamento">
+          <div className="hours">
+            {WEEKDAYS.map((w, d) => {
+              const h = s.hours[d]
+              return (
+                <div key={d} className="hour-row">
+                  <label className="switch"><input type="checkbox" checked={!!h} onChange={(e) => setDay(d, e.target.checked ? ['09:00', '19:00'] : null)} /><span /></label>
+                  <b>{w}</b>
+                  {h ? (
+                    <div className="range">
+                      <input type="time" value={h[0]} onChange={(e) => setDay(d, [e.target.value, h[1]])} />
+                      <input type="time" value={h[1]} onChange={(e) => setDay(d, [h[0], e.target.value])} />
+                    </div>
+                  ) : <span className="muted">Fechado</span>}
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      </div>
+      <div className="grid-2 mt">
+        <Card title="Fidelidade e benefícios">
+          <div className="toggles">
+            <label className="toggle-row"><span><b>Cartão Fidelidade</b><small>Cada visita marca um ponto no cartão</small></span><span className="switch"><input type="checkbox" checked={s.loyalty?.enabled !== false} onChange={(e) => setS({ ...s, loyalty: { ...s.loyalty, enabled: e.target.checked } })} /><span /></span></label>
+            <div className="form-grid">
+              <Field label="Visitas para ganhar"><input inputMode="numeric" value={s.loyalty?.goal ?? 10} onChange={(e) => setS({ ...s, loyalty: { ...s.loyalty, goal: onlyDigits(e.target.value) } })} /></Field>
+              <Field label="Prêmio"><select value={s.loyalty?.rewardServiceId || ''} onChange={(e) => setS({ ...s, loyalty: { ...s.loyalty, rewardServiceId: e.target.value } })}>{data.services.filter((x) => x.active).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
+            </div>
+            <label className="toggle-row"><span><b>Clube (assinatura)</b><small>Mostra os planos no app</small></span><span className="switch"><input type="checkbox" checked={s.clubEnabled !== false} onChange={(e) => setS({ ...s, clubEnabled: e.target.checked })} /><span /></span></label>
+            <label className="toggle-row"><span><b>Lista de espera</b><small>Cliente pede vaga quando não há horário</small></span><span className="switch"><input type="checkbox" checked={s.waitlistEnabled !== false} onChange={(e) => setS({ ...s, waitlistEnabled: e.target.checked })} /><span /></span></label>
+            <div className="form-grid">
+              <Field label="Desconto de aniversário (%)"><input inputMode="numeric" value={s.birthdayDiscount ?? 15} onChange={(e) => setS({ ...s, birthdayDiscount: onlyDigits(e.target.value) })} /></Field>
+              <Field label="Link de avaliação do Google" hint="Quem der 4 ou 5 estrelas é convidado a avaliar no Google"><input value={s.googleReviewUrl || ''} onChange={(e) => setS({ ...s, googleReviewUrl: e.target.value })} placeholder="https://g.page/r/..." /></Field>
+            </div>
+          </div>
+        </Card>
+        <Card title="Importar planilha"><Importer /></Card>
+      </div>
+      <div className="grid-2 mt">
+        <Card title="Mensagens do WhatsApp">
+          <p className="muted small">Edite os textos que o sistema prepara para o WhatsApp. As palavras entre chaves são trocadas automaticamente.</p>
+          <div className="msg-edit mt-sm">
+            <Field label="Mensagem">
+              <select value={msgKey} onChange={(e) => setMsgKey(e.target.value)}>
+                {MESSAGES.map((m) => <option key={m.key} value={m.key}>{m.label}{(s.messages?.[m.key] || '').trim() ? ' · editada' : ''}</option>)}
+              </select>
+            </Field>
+            <p className="field-hint">{cur.who}</p>
+            <Field label="Texto"><textarea rows={7} value={(s.messages?.[msgKey] ?? '') || cur.text} onChange={(e) => setMsg(msgKey, e.target.value)} /></Field>
+            <div className="msg-vars">{cur.vars.map((v) => <button key={v} type="button" className="pill" onClick={() => setMsg(msgKey, `${(s.messages?.[msgKey] ?? '') || cur.text}{${v}}`)}>{`{${v}}`}</button>)}</div>
+            <div className="foot-row">
+              <Button variant="ghost" size="sm" icon={RotateCcw} onClick={() => setMsg(msgKey, '')}>Voltar ao padrão</Button>
+              <span className="muted small"><MessageCircle size={13} /> Clique em Salvar no topo</span>
+            </div>
+          </div>
+        </Card>
+        <div className="stack">
+          <Card title="Página de agendamento">
+            <div className="form-grid">
+              <Field label="Frase de destaque" className="span-2"><textarea rows={2} value={page.heroText ?? ''} placeholder={BRAND.heroText} onChange={(e) => setPage('heroText', e.target.value)} /></Field>
+              <Field label="Aviso para as clientes (opcional)" className="span-2" hint="Aparece no topo do site. Também dá para editar em Avisos."><textarea rows={2} value={page.notice ?? ''} placeholder="Ex.: Feriado dia 12/10, estaremos fechados." onChange={(e) => setPage('notice', e.target.value)} /></Field>
+            </div>
+          </Card>
+          <Card title="Privacidade da equipe">
+            <label className="toggle-row"><span><b><EyeOff size={14} /> Ocultar contato das clientes</b><small>As profissionais não veem telefone nem WhatsApp das clientes. Só a gestão.</small></span><span className="switch"><input type="checkbox" checked={privacy.hideContacts !== false} onChange={(e) => setS({ ...s, privacy: { ...privacy, hideContacts: e.target.checked } })} /><span /></span></label>
+            <p className="muted small mt-sm">Cada profissional vê só a própria agenda, o próprio extrato e os avisos dela.</p>
+          </Card>
+        </div>
+      </div>
+      <div className="grid-2 mt">
+        <Card title="Notificações da equipe">
+          <div className="toggles">
+            <label className="toggle-row"><span><b>Pop-up de novo agendamento</b><small>Avisa a profissional (e a gestão) quando entra um horário</small></span><span className="switch"><input type="checkbox" checked={notify.newBooking !== false} onChange={(e) => setNotify('newBooking', e.target.checked)} /><span /></span></label>
+            <label className="toggle-row"><span><b>Resumo do dia</b><small>Ao abrir o painel, mostra quantos atendimentos a profissional tem hoje</small></span><span className="switch"><input type="checkbox" checked={notify.dailySummary !== false} onChange={(e) => setNotify('dailySummary', e.target.checked)} /><span /></span></label>
+            <label className="toggle-row"><span><b>Notificação do navegador</b><small>Também avisa com o site em segundo plano (cada aparelho precisa permitir)</small></span><span className="switch"><input type="checkbox" checked={notify.browser !== false} onChange={(e) => setNotify('browser', e.target.checked)} /><span /></span></label>
+            <div className="form-grid">
+              <Field label="Lembrete antes do atendimento"><select value={notify.reminderMinutes} onChange={(e) => setNotify('reminderMinutes', Number(e.target.value))}>{[0, 5, 10, 15, 30, 60].map((m) => <option key={m} value={m}>{m ? `${m} min antes` : 'Desligado'}</option>)}</select></Field>
+              <Field label="Atualizar a agenda a cada"><select value={notify.pollSeconds} onChange={(e) => setNotify('pollSeconds', Number(e.target.value))}>{[30, 60, 120, 300].map((m) => <option key={m} value={m}>{m < 60 ? `${m} s` : `${m / 60} min`}</option>)}</select></Field>
+            </div>
+            {perm !== 'unsupported' && (
+              <div className="foot-row">
+                <span className="muted small">Neste aparelho: {perm === 'granted' ? 'notificações permitidas' : perm === 'denied' ? 'bloqueadas nas configurações do navegador' : 'ainda não permitidas'}</span>
+                {perm === 'default' && <Button variant="ghost" size="sm" icon={BellRing} onClick={() => Notification.requestPermission().then(() => setS({ ...s }))}>Permitir aqui</Button>}
+              </div>
+            )}
+          </div>
+        </Card>
+        <Card title="Modo TV da recepção">
+          <p className="muted small">Abra numa TV ou tablet na recepção: mostra quem está na cadeira, os próximos clientes e um QR code para agendar.</p>
+          <Link className="btn btn-primary mt-sm" to="/tv"><Tv size={16} /> Abrir modo TV</Link>
+        </Card>
+        <Card title="Link de agendamento">
+          <p className="muted small">Coloque na bio do Instagram, no Google Meu Negócio e no status do WhatsApp.</p>
+          <div className="copy-link"><code>{link}</code>
+            <Button variant="ghost" size="sm" icon={Copy} onClick={() => { navigator.clipboard?.writeText(link).then(() => actions.notify('Link copiado')).catch(() => actions.notify('Selecione o link e copie manualmente', 'bad')) }}>Copiar</Button>
+            <a className="btn btn-ghost btn-sm" href="#/" target="_blank" rel="noreferrer"><ExternalLink size={15} /> Abrir</a>
+          </div>
+        </Card>
+        {isDemo && (
+          <Card title="Modo demonstração">
+            <p className="muted small">Os dados desta demonstração ficam salvos só neste navegador. Restaure para voltar aos dados de exemplo.</p>
+            <Button variant="danger" icon={RotateCcw} onClick={async () => (await actions.confirm('Restaurar todos os dados de exemplo? O que foi lançado nesta demonstração será apagado.', 'Restaurar')) && actions.resetDemo()}>Restaurar dados de exemplo</Button>
+          </Card>
+        )}
+      </div>
+    </div>
+  )
+}
