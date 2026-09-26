@@ -146,6 +146,16 @@ export function createSupabaseDB(url, key) {
       return this.session()
     },
     async logout() { role = null; await sb.auth.signOut() },
+
+    // ---- Notificações push ----
+    async savePush(sub, ua) { must(await sb.rpc('save_push_subscription', { p_endpoint: sub.endpoint, p_keys: sub.keys, p_user_agent: (ua || '').slice(0, 300) })) },
+    async removePush(endpoint) { must(await sb.rpc('delete_push_subscription', { p_endpoint: endpoint })) },
+    async testPush() {
+      const { data, error } = await sb.functions.invoke('send-push', { body: { type: 'test' } })
+      if (error) throw new Error('A função de envio não respondeu. Confira se "send-push" foi publicada no Supabase.')
+      if (!data?.sent) throw new Error('Nenhum aparelho ativado para este login. Toque em "Ativar neste aparelho" primeiro.')
+      return data
+    },
     async session() {
       const { data } = await sb.auth.getSession()
       if (!data.session) return null

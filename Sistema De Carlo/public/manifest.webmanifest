@@ -1,0 +1,17 @@
+{
+  "name": "De Carlo Beauty",
+  "short_name": "De Carlo",
+  "description": "Agendamento e gestão da De Carlo Beauty",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FAF6F4",
+  "theme_color": "#FAF6F4",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

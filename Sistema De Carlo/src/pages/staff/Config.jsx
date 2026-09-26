@@ -1,7 +1,8 @@
-import { useState } from 'react'
-import { BellRing, Copy, ExternalLink, EyeOff, MessageCircle, RotateCcw, Save, Tv } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { BellRing, Copy, ExternalLink, Send, EyeOff, MessageCircle, RotateCcw, Save, Tv } from 'lucide-react'
 import { BRAND } from '../../config/brand'
 import { MESSAGES } from '../../lib/messages'
+import { disablePush, enablePush, pushStatus, sendTestPush } from '../../lib/push'
 import { NOTIFY_DEFAULTS } from '../../components/Notifier'
 import { Link } from 'react-router-dom'
 import Importer from '../../components/Importer'
@@ -23,7 +24,6 @@ export default function Config() {
   const privacy = { hideContacts: true, ...(s.privacy || {}) }
   const page = s.page || {}
   const setPage = (k, v) => setS({ ...s, page: { ...page, [k]: v } })
-  const perm = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission
 
   return (
     <div>
@@ -127,12 +127,7 @@ export default function Config() {
               <Field label="Lembrete antes do atendimento"><select value={notify.reminderMinutes} onChange={(e) => setNotify('reminderMinutes', Number(e.target.value))}>{[0, 5, 10, 15, 30, 60].map((m) => <option key={m} value={m}>{m ? `${m} min antes` : 'Desligado'}</option>)}</select></Field>
               <Field label="Atualizar a agenda a cada"><select value={notify.pollSeconds} onChange={(e) => setNotify('pollSeconds', Number(e.target.value))}>{[30, 60, 120, 300].map((m) => <option key={m} value={m}>{m < 60 ? `${m} s` : `${m / 60} min`}</option>)}</select></Field>
             </div>
-            {perm !== 'unsupported' && (
-              <div className="foot-row">
-                <span className="muted small">Neste aparelho: {perm === 'granted' ? 'notificações permitidas' : perm === 'denied' ? 'bloqueadas nas configurações do navegador' : 'ainda não permitidas'}</span>
-                {perm === 'default' && <Button variant="ghost" size="sm" icon={BellRing} onClick={() => Notification.requestPermission().then(() => setS({ ...s }))}>Permitir aqui</Button>}
-              </div>
-            )}
+            <PushPanel />
           </div>
         </Card>
         <Card title="Modo TV da recepção">
@@ -152,6 +147,34 @@ export default function Config() {
             <Button variant="danger" icon={RotateCcw} onClick={async () => (await actions.confirm('Restaurar todos os dados de exemplo? O que foi lançado nesta demonstração será apagado.', 'Restaurar')) && actions.resetDemo()}>Restaurar dados de exemplo</Button>
           </Card>
         )}
+      </div>
+    </div>
+  )
+}
+
+/** Notificações neste aparelho (push) — usado em Ajustes e no Meu dia da profissional */
+export function PushPanel() {
+  const { actions, isDemo } = useStore()
+  const [st, setSt] = useState('...')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { pushStatus().then(setSt) }, [])
+  const run = async (fn) => { setBusy(true); try { await fn() } catch (e) { actions.notify(e.message, 'bad') } finally { setBusy(false) } }
+  const label = {
+    on: 'Ativadas neste aparelho. Chegam mesmo com o site fechado.',
+    local: isDemo ? 'Permitidas (na demonstração, só com o site aberto).' : 'Permitidas, mas o envio pelo servidor ainda não foi configurado.',
+    off: 'Ainda não ativadas neste aparelho.',
+    denied: 'Bloqueadas. Libere nas configurações do navegador (cadeado ao lado do endereço) e tente de novo.',
+    'ios-install': 'No iPhone: toque em Compartilhar → “Adicionar à Tela de Início”, abra pelo ícone e ative aqui.',
+    unsupported: 'Este navegador não recebe notificações. No Android use o Chrome; no iPhone, instale na tela de início.',
+    '...': 'Verificando…',
+  }[st]
+  return (
+    <div className="push-panel">
+      <p className={`push-status st-${st}`}><BellRing size={15} /> {label}</p>
+      <div className="foot-row">
+        {(st === 'off' || st === 'local') && !isDemo && <Button size="sm" icon={BellRing} disabled={busy} onClick={() => run(async () => { const r = await enablePush(); setSt(r); if (r === 'on') actions.notify('Notificações ativadas neste aparelho') })}>Ativar neste aparelho</Button>}
+        {st === 'on' && <Button size="sm" variant="ghost" icon={Send} disabled={busy} onClick={() => run(async () => { const r = await sendTestPush(); actions.notify(`Teste enviado para ${r.sent} aparelho${r.sent > 1 ? 's' : ''}`) })}>Enviar teste</Button>}
+        {st === 'on' && <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(async () => setSt(await disablePush()))}>Desativar</Button>}
       </div>
     </div>
   )

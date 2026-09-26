@@ -70,6 +70,9 @@ export function createDemoDB() {
       return out
     },
     async linkStaff() {},
+    async savePush() {},
+    async removePush() {},
+    async testPush() { return { sent: 0, demo: true } },
     async markRead(id, barberId) {
       const n = data.announcements.find((x) => x.id === id)
       if (n) { n.reads = { ...(n.reads || {}), [barberId || 'admin']: new Date().toISOString() }; save() }

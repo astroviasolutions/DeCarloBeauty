@@ -70,6 +70,18 @@ São três contas: **Supabase** (banco e login), **GitHub** (guarda o código) e
 5. **Logins das profissionais**: no Supabase, crie o usuário de cada uma em Authentication → Users → Add user (com Auto Confirm). Depois, no painel, vá em Equipe → Editar → **E-mail de acesso** → **Vincular**.
 6. Copie o link de agendamento (Ajustes → Link de agendamento) e coloque na bio do Instagram e no WhatsApp.
 
+### 5. Notificações no celular (push)
+
+Elas chegam mesmo com o site fechado: novo agendamento (para a gestão e para a profissional), aviso da gestão e lembrete antes do atendimento.
+
+1. **Supabase → SQL Editor**: rode de novo o `supabase/schema.sql` (pode rodar por cima, não apaga dados). Depois rode o `ATIVAR-PUSH.sql`, que fica fora do GitHub e tem a senha interna.
+2. **Supabase → Edge Functions → Deploy a new function → Via Editor**: nome `send-push`. Cole o conteúdo de `supabase/functions/send-push/index.ts` e clique em **Deploy**. Depois, nos detalhes da função, **desligue "Verify JWT"** (Enforce JWT verification) e salve.
+3. **Supabase → Edge Functions → Secrets**: adicione os 4 segredos do arquivo `CHAVES-PUSH.txt`.
+4. **Vercel → Environment Variables**: adicione `VITE_VAPID_PUBLIC_KEY` do tipo **Config**, com o valor do `CHAVES-PUSH.txt`, e faça o Redeploy.
+5. **No celular**: abra o site, entre na Área da equipe e toque em **Ativar** no aviso. Também dá em Ajustes → Notificações → Ativar neste aparelho. Para testar, use **Enviar teste**.
+   - **Android**: pelo Chrome já funciona. Também dá para instalar pelo menu ⋮ → "Adicionar à tela inicial".
+   - **iPhone (iOS 16.4 ou mais novo)**: primeiro toque em Compartilhar → **Adicionar à Tela de Início**. Depois abra pelo ícone da De Carlo e ative ali. No Safari comum, a Apple não entrega push.
+
 ### Dicas para o teste
 
 - **Notificações**: cada aparelho precisa tocar em "Ativar" no aviso do painel, ou em Ajustes → Notificações → Permitir aqui. Os pop-ups aparecem com o painel aberto, e a agenda atualiza sozinha a cada minuto.

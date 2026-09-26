@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { db, isDemo } from '../data'
 import { safeLS } from '../lib/utils'
+import { disablePush } from '../lib/push'
 
 const Ctx = createContext(null)
 const SESSION_KEY = 'dcb:session'
@@ -42,7 +43,7 @@ export function StoreProvider({ children }) {
 
   const actions = useMemo(() => ({
     login: async (cred) => { const s = await db.login(cred); setSession(s); if (isDemo) safeLS.set(SESSION_KEY, s); return s },
-    logout: async () => { await db.logout(); setSession(null); setData(null); safeLS.del(SESSION_KEY) },
+    logout: async () => { await disablePush().catch(() => {}); await db.logout(); setSession(null); setData(null); safeLS.del(SESSION_KEY) },
     busy: (date) => db.busy(date),
     book: async (p) => { const r = await db.book(p); if (session) await refresh(); return r },
     staffBook: (p) => run(() => db.book({ ...p, source: 'balcao' }), 'Agendamento criado'),

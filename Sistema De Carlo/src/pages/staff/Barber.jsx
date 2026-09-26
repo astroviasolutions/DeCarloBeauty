@@ -7,6 +7,7 @@ import { PortfolioModal, Stars } from '../../components/Loyalty'
 import { AppointmentModal, ApptRow } from '../../components/Appointments'
 import { commissionSummary } from '../../lib/commission'
 import Agenda from './Agenda'
+import { PushPanel } from './Config'
 import { PERIOD_OPTS, periodOf } from './Relatorios'
 import { staffStatementPDF } from '../../lib/pdf'
 import { addDays, fmtDate, fmtDateLong, money, PERIODS, relDay, startOfMonth, today } from '../../lib/utils'
@@ -52,6 +53,7 @@ export function BarberHome() {
         <div className="stack">
           <Card title="Minhas folgas e bloqueios" action={<button className="link" onClick={() => setBlockOpen(true)}>+ Bloquear</button>}><BlocksList barberId={me.id} /></Card>
           <Card title="Avaliações dos clientes"><MyReviews barberId={me.id} /></Card>
+          <Card title="Notificações no celular"><PushPanel /></Card>
         </div>
       </div>
       {sel && <AppointmentModal appt={sel} onClose={() => setSel(null)} />}

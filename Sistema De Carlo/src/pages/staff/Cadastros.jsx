@@ -195,10 +195,29 @@ export function Catalogo() {
   const isSvc = tab === 'services'
   const blank = isSvc ? { name: '', description: '', duration: 30, price: 0, commission: 50, active: true, order: list.length + 1 } : { name: '', price: 0, stock: 0, commission: 10, active: true }
 
+  const team = data.barbers.filter((b) => b.active)
+  const [ov, setOv] = useState({}) // tempo/comissão por profissional deste serviço
+  const open = (x) => {
+    setEdit(x)
+    if (isSvc) setOv(Object.fromEntries(team.map((b) => [b.id, { duration: b.serviceOverrides?.[x.id]?.duration ?? '', commission: b.serviceOverrides?.[x.id]?.commission ?? '' }])))
+  }
+  const setOne = (bid, k, v) => setOv((o) => ({ ...o, [bid]: { ...o[bid], [k]: v } }))
   const save = async () => {
-    const row = { ...edit, price: Number(edit.price), commission: Number(edit.commission) }
-    if (isSvc) row.duration = Number(edit.duration); else row.stock = Number(edit.stock)
-    await actions.upsert(tab, row); setEdit(null)
+    const { overrides: _o, ...clean } = edit
+    const row = { ...clean, price: Number(edit.price), commission: Number(edit.commission) }
+    if (isSvc) row.duration = Math.max(5, Number(edit.duration) || 30); else row.stock = Number(edit.stock)
+    const saved = await actions.upsert(tab, row, 'Salvo')
+    if (isSvc && saved?.id) {
+      // grava o tempo/comissão próprios na ficha de cada profissional que mudou
+      for (const b of team) {
+        const cur = b.serviceOverrides?.[saved.id] || {}
+        const nx = ov[b.id] || {}
+        if (String(cur.duration ?? '') === String(nx.duration ?? '') && String(cur.commission ?? '') === String(nx.commission ?? '')) continue
+        const next = cleanOverrides({ ...(b.serviceOverrides || {}), [saved.id]: nx })
+        await actions.upsert('barbers', { ...stripBarber(b), serviceOverrides: next }, null)
+      }
+    }
+    setEdit(null)
   }
 
   return (
@@ -207,7 +226,7 @@ export function Catalogo() {
         <div><p className="eyebrow">Preços e regras de comissão</p><h1 className="page-title">Catálogo</h1></div>
         <div className="head-actions">
           <Segmented value={tab} onChange={setTab} options={[{ value: 'services', label: 'Serviços' }, { value: 'products', label: 'Produtos' }]} />
-          <Button icon={Plus} onClick={() => setEdit(blank)}>{isSvc ? 'Novo serviço' : 'Novo produto'}</Button>
+          <Button icon={Plus} onClick={() => open(blank)}>{isSvc ? 'Novo serviço' : 'Novo produto'}</Button>
         </div>
       </div>
       <div className="cards">
@@ -221,7 +240,10 @@ export function Catalogo() {
             <b className="item-price">{money(x.price)}</b>
             {!x.active && <Badge>Inativo</Badge>}
             {!isSvc && Number(x.stock) <= 3 && x.active && <Badge tone="warn">Estoque baixo</Badge>}
-            <button className="icon-btn sm" onClick={() => setEdit(x)} aria-label="Editar"><Pencil size={16} /></button>
+            {isSvc && team.some((b) => b.serviceOverrides?.[x.id]?.duration) && (
+              <small className="item-ov">{team.filter((b) => b.serviceOverrides?.[x.id]?.duration).map((b) => `${b.name.split(' ')[0]} ${b.serviceOverrides[x.id].duration} min`).join(' · ')}</small>
+            )}
+            <button className="icon-btn sm" onClick={() => open(x)} aria-label="Editar"><Pencil size={16} /></button>
           </div>
         ))}
       </div>
@@ -238,12 +260,28 @@ export function Catalogo() {
             <Field label="Preço (R$)"><input inputMode="decimal" value={edit.price} onChange={(e) => setEdit({ ...edit, price: e.target.value })} /></Field>
             <Field label="Comissão (%)"><input inputMode="numeric" value={edit.commission} onChange={(e) => setEdit({ ...edit, commission: e.target.value })} /></Field>
             {isSvc ? (
-              <Field label="Duração (min)"><select value={edit.duration} onChange={(e) => setEdit({ ...edit, duration: e.target.value })}>{[15, 30, 45, 60, 75, 90, 120].map((m) => <option key={m} value={m}>{m} min</option>)}</select></Field>
+              <Field label="Duração padrão (min)"><input inputMode="numeric" value={edit.duration} onChange={(e) => setEdit({ ...edit, duration: onlyDigits(e.target.value).slice(0, 3) })} /></Field>
             ) : (
               <Field label="Estoque"><input inputMode="numeric" value={edit.stock} onChange={(e) => setEdit({ ...edit, stock: e.target.value })} /></Field>
             )}
             <Field label="Status"><select value={edit.active ? '1' : '0'} onChange={(e) => setEdit({ ...edit, active: e.target.value === '1' })}><option value="1">Ativo</option><option value="0">Inativo</option></select></Field>
             <p className="muted small span-2">Exemplo: {money(edit.price)} com {edit.commission || 0}% → profissional recebe {money((Number(edit.price) || 0) * (Number(edit.commission) || 0) / 100)}.</p>
+            {isSvc && team.length > 0 && (
+              <div className="span-2 ov-box">
+                <h4 className="sub-title">Tempo e comissão por profissional</h4>
+                <p className="muted small">Quanto tempo cada profissional leva neste procedimento. Em branco = usa o padrão ({edit.duration || 30} min · {edit.commission || 0}%). O tempo define os horários livres no site.</p>
+                <div className="ov-table">
+                  <div className="ov-row ov-head"><span>Profissional</span><span>Tempo (min)</span><span>Comissão (%)</span></div>
+                  {team.map((b) => (
+                    <div key={b.id} className="ov-row">
+                      <span><b>{b.name}</b><small>{b.bio || 'Profissional'}</small></span>
+                      <input inputMode="numeric" aria-label={`Tempo de ${b.name}`} placeholder={String(edit.duration || 30)} value={ov[b.id]?.duration ?? ''} onChange={(e) => setOne(b.id, 'duration', onlyDigits(e.target.value).slice(0, 3))} />
+                      <input inputMode="decimal" aria-label={`Comissão de ${b.name}`} placeholder={String(b.serviceRate ?? edit.commission ?? '')} value={ov[b.id]?.commission ?? ''} onChange={(e) => setOne(b.id, 'commission', e.target.value.replace(/[^\d.,]/g, '').replace(',', '.').slice(0, 5))} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Modal>
@@ -315,7 +353,7 @@ export function Equipe() {
             </Field>
             <Field label="Status"><select value={edit.active ? '1' : '0'} onChange={(e) => setEdit({ ...edit, active: e.target.value === '1' })}><option value="1">Ativo</option><option value="0">Inativo</option></select></Field>
             <div className="span-2 ov-box">
-              <h4 className="sub-title">Procedimentos desta profissional</h4>
+              <h4 className="sub-title">Tempo e comissão por procedimento</h4>
               <p className="muted small">Deixe em branco para usar o tempo e a comissão padrão do Catálogo. O tempo muda os horários livres no agendamento.</p>
               <div className="ov-table">
                 <div className="ov-row ov-head"><span>Procedimento</span><span>Tempo (min)</span><span>Comissão (%)</span></div>
@@ -345,3 +383,7 @@ function cleanOverrides(o = {}) {
   }
   return out
 }
+
+/** Campos da profissional que vão para o banco (sem os calculados na tela) */
+const stripBarber = ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides }) =>
+  ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides })

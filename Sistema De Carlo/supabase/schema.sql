@@ -558,3 +558,103 @@ insert into settings(id, shop_name) values ('main', 'De Carlo Beauty') on confli
 -- 3) As profissionais: crie o usuário de cada uma em Authentication → Users
 --    e, no painel, vá em Equipe → Editar → "E-mail de acesso" → Vincular.
 -- =====================================================================
+
+-- =====================================================================
+-- NOTIFICAÇÕES PUSH (celular, mesmo com o site fechado)
+-- Quem envia é a função "send-push" (supabase/functions/send-push).
+-- O endereço da função e a senha interna ficam em private_config
+-- (preenchidos pelo arquivo ATIVAR-PUSH.sql, fora do GitHub).
+-- =====================================================================
+create extension if not exists pg_net;
+
+create table if not exists push_subscriptions (
+  endpoint text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role text not null default 'barber',
+  barber_id text,
+  keys jsonb not null,
+  user_agent text default '',
+  created_at timestamptz not null default now()
+);
+alter table push_subscriptions enable row level security;   -- sem políticas: só as funções abaixo acessam
+
+create table if not exists private_config (key text primary key, value text not null);
+alter table private_config enable row level security;       -- sem políticas: ninguém lê pelo site
+
+alter table appointments add column if not exists reminded_at timestamptz;
+
+-- aparelho da pessoa logada passa a receber push
+create or replace function save_push_subscription(p_endpoint text, p_keys jsonb, p_user_agent text default '') returns void
+language plpgsql security definer set search_path = public as $$
+declare st staff;
+begin
+  select * into st from staff where user_id = auth.uid();
+  if not found then raise exception 'Sem permissão'; end if;
+  insert into push_subscriptions(endpoint, user_id, role, barber_id, keys, user_agent)
+  values (p_endpoint, st.user_id, st.role, st.barber_id, p_keys, left(coalesce(p_user_agent, ''), 300))
+  on conflict (endpoint) do update set user_id = excluded.user_id, role = excluded.role, barber_id = excluded.barber_id, keys = excluded.keys, user_agent = excluded.user_agent;
+end $$;
+grant execute on function save_push_subscription(text, jsonb, text) to authenticated;
+
+create or replace function delete_push_subscription(p_endpoint text) returns void
+language sql security definer set search_path = public as $$
+  delete from push_subscriptions where endpoint = p_endpoint and user_id = auth.uid()
+$$;
+grant execute on function delete_push_subscription(text) to authenticated;
+
+-- chama a função de envio (nunca atrapalha o agendamento se algo falhar)
+create or replace function push_dispatch(p_type text, p_payload jsonb) returns void
+language plpgsql security definer set search_path = public as $$
+declare u text; s text;
+begin
+  select value into u from private_config where key = 'push_function_url';
+  select value into s from private_config where key = 'push_secret';
+  if u is null or s is null then return; end if;
+  perform net.http_post(
+    url := u,
+    body := jsonb_build_object('type', p_type) || coalesce(p_payload, '{}'::jsonb),
+    headers := jsonb_build_object('Content-Type', 'application/json', 'x-push-secret', s)
+  );
+exception when others then
+  raise warning 'push_dispatch: %', sqlerrm;
+end $$;
+revoke execute on function push_dispatch(text, jsonb) from public, anon, authenticated;
+
+create or replace function trg_push_appointment() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.status in ('agendado', 'confirmado') then perform push_dispatch('appointment', jsonb_build_object('id', new.id)); end if;
+  return new;
+end $$;
+drop trigger if exists push_new_appointment on appointments;
+create trigger push_new_appointment after insert on appointments for each row execute function trg_push_appointment();
+
+create or replace function trg_push_announcement() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.active then perform push_dispatch('announcement', jsonb_build_object('id', new.id)); end if;
+  return new;
+end $$;
+drop trigger if exists push_new_announcement on announcements;
+create trigger push_new_announcement after insert on announcements for each row execute function trg_push_announcement();
+
+-- lembrete antes do atendimento (rodado a cada 5 minutos pelo agendador)
+create or replace function push_reminders() returns int
+language plpgsql security definer set search_path = public as $$
+declare tz text; mins int; local_now timestamp; ids text[];
+begin
+  select coalesce((select value from private_config where key = 'timezone'), 'America/Sao_Paulo') into tz;
+  select coalesce((notify->>'reminderMinutes')::int, 15) into mins from settings where id = 'main';
+  if coalesce(mins, 0) <= 0 then return 0; end if;
+  local_now := (now() at time zone tz);
+  with due as (
+    update appointments a set reminded_at = now()
+    where a.date = local_now::date and a.status in ('agendado', 'confirmado') and a.reminded_at is null
+      and (a.date + a.time) >= local_now and (a.date + a.time) <= local_now + make_interval(mins => mins)
+    returning a.id
+  ) select array_agg(id) into ids from due;
+  if ids is null then return 0; end if;
+  perform push_dispatch('reminder', jsonb_build_object('ids', to_jsonb(ids)));
+  return coalesce(array_length(ids, 1), 0);
+end $$;
+revoke execute on function push_reminders() from public, anon, authenticated;

@@ -4,7 +4,7 @@ import { Bell, BellRing, CalendarPlus, Clock, Megaphone, Sun, X } from 'lucide-r
 import { useStore } from '../state/Store'
 import { Button, Modal } from './ui'
 import { serviceNames } from './Appointments'
-import { BRAND } from '../config/brand'
+import { enablePush, pushStatus, showLocal } from '../lib/push'
 import { fmtDate, nowMin, relDay, safeLS, today, toMin } from '../lib/utils'
 
 export const NOTIFY_DEFAULTS = { newBooking: true, reminderMinutes: 15, dailySummary: true, browser: true, pollSeconds: 60 }
@@ -39,9 +39,7 @@ export default function Notifier() {
   const push = useCallback((c) => {
     const card = { id: `${Date.now()}-${Math.random()}`, ...c }
     setCards((l) => [card, ...l].slice(0, 4))
-    if (cfg.browser && typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
-      try { new Notification(c.title, { body: c.body, icon: BRAND.logo, tag: c.tag }) } catch { /* navegador sem suporte */ }
-    }
+    if (cfg.browser && document.hidden) showLocal({ title: c.title, body: c.body, tag: c.tag })
     setTimeout(() => setCards((l) => l.filter((x) => x.id !== card.id)), 45000)
   }, [cfg.browser])
   const close = (id) => setCards((l) => l.filter((x) => x.id !== id))
@@ -53,11 +51,20 @@ export default function Notifier() {
     return () => clearInterval(t)
   }, [session, actions, cfg.pollSeconds, cfg.browser])
 
-  // pedido de permissão do navegador (uma vez)
+  // convite para ativar as notificações neste aparelho (uma vez por aparelho)
   useEffect(() => {
-    if (typeof Notification === 'undefined' || !cfg.browser) return
-    if (Notification.permission === 'default' && !safeLS.get('dcb:perm-asked')) setAskPerm(true)
+    if (!cfg.browser || safeLS.get('dcb:perm-asked')) return
+    pushStatus().then((st) => { if (st === 'off' || st === 'ios-install') setAskPerm(st) })
   }, [cfg.browser])
+  const activate = async () => {
+    safeLS.set('dcb:perm-asked', 1)
+    try {
+      const st = await enablePush()
+      setAskPerm(false)
+      if (st === 'on') actions.notify('Notificações ativadas neste aparelho')
+      else if (st === 'denied') actions.notify('As notificações estão bloqueadas nas configurações do navegador', 'bad')
+    } catch (e) { setAskPerm(false); actions.notify(`Não foi possível ativar: ${e.message}`, 'bad') }
+  }
 
   const mine = useCallback((a) => (who === 'admin' ? true : a.barberId === who), [who])
 
@@ -124,14 +131,22 @@ export default function Notifier() {
   return (
     <>
       <div className="notif-stack" aria-live="polite">
-        {askPerm && (
+        {askPerm === 'off' && (
           <div className="notif-card perm">
             <span className="notif-ico"><BellRing size={18} /></span>
-            <div className="notif-txt"><b>Receber alertas da agenda?</b><small>Avisamos novos agendamentos e o próximo atendimento, mesmo com o site em segundo plano.</small>
+            <div className="notif-txt"><b>Receber alertas no celular?</b><small>Avisamos novos agendamentos, avisos da gestão e o próximo atendimento, mesmo com o site fechado.</small>
               <div className="notif-actions">
-                <Button size="sm" onClick={async () => { safeLS.set('dcb:perm-asked', 1); setAskPerm(false); try { await Notification.requestPermission() } catch { /* */ } }}>Ativar</Button>
+                <Button size="sm" onClick={activate}>Ativar</Button>
                 <Button size="sm" variant="ghost" onClick={() => { safeLS.set('dcb:perm-asked', 1); setAskPerm(false) }}>Agora não</Button>
               </div>
+            </div>
+          </div>
+        )}
+        {askPerm === 'ios-install' && (
+          <div className="notif-card perm">
+            <span className="notif-ico"><BellRing size={18} /></span>
+            <div className="notif-txt"><b>Alertas no iPhone</b><small>Toque em Compartilhar e depois em “Adicionar à Tela de Início”. Abra pelo ícone da De Carlo e ative as notificações.</small>
+              <div className="notif-actions"><Button size="sm" variant="ghost" onClick={() => { safeLS.set('dcb:perm-asked', 1); setAskPerm(false) }}>Entendi</Button></div>
             </div>
           </div>
         )}
