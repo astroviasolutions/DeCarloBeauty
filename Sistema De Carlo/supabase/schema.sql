@@ -623,7 +623,7 @@ revoke execute on function push_dispatch(text, jsonb) from public, anon, authent
 create or replace function trg_push_appointment() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  if new.status in ('agendado', 'confirmado') then perform push_dispatch('appointment', jsonb_build_object('id', new.id)); end if;
+  if new.status in ('agendado', 'confirmado') then perform push_dispatch('appointment', jsonb_build_object('id', new.id, 'actor', auth.uid())); end if;
   return new;
 end $$;
 drop trigger if exists push_new_appointment on appointments;
@@ -645,6 +645,7 @@ declare tz text; mins int; local_now timestamp; ids text[];
 begin
   select coalesce((select value from private_config where key = 'timezone'), 'America/Sao_Paulo') into tz;
   select coalesce((notify->>'reminderMinutes')::int, 15) into mins from settings where id = 'main';
+  perform push_daily_summary();
   if coalesce(mins, 0) <= 0 then return 0; end if;
   local_now := (now() at time zone tz);
   with due as (
@@ -658,3 +659,84 @@ begin
   return coalesce(array_length(ids, 1), 0);
 end $$;
 revoke execute on function push_reminders() from public, anon, authenticated;
+
+
+-- =====================================================================
+-- MAIS NOTIFICAÇÕES: cancelamento, remarcação, falta, confirmação,
+-- atendimento concluído, avaliação, lista de espera, estoque baixo
+-- e resumo da agenda de manhã. Quem fez a ação não recebe o próprio aviso
+-- (a não ser que "Avisar também o que eu mesmo fiz" esteja ligado).
+-- =====================================================================
+create or replace function trg_push_appointment_change() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare k text;
+begin
+  if new.status = 'cancelado' and old.status in ('agendado', 'confirmado') then k := 'cancel';
+  elsif new.status = 'faltou' and old.status <> 'faltou' then k := 'noshow';
+  elsif new.status in ('agendado', 'confirmado') and old.status in ('agendado', 'confirmado')
+        and (new.date <> old.date or new.time <> old.time or new.barber_id <> old.barber_id) then k := 'reschedule';
+  elsif new.status = 'confirmado' and old.status = 'agendado' then k := 'confirm';
+  elsif new.status in ('agendado', 'confirmado') and old.status in ('cancelado', 'faltou') then k := 'restore';
+  end if;
+  if k is not null then
+    perform push_dispatch('change', jsonb_build_object('id', new.id, 'kind', k, 'actor', auth.uid(),
+      'old_date', old.date, 'old_time', old.time, 'old_barber', old.barber_id));
+  end if;
+  if k = 'reschedule' then new.reminded_at := null; end if;
+  return new;
+end $$;
+drop trigger if exists push_change_appointment on appointments;
+create trigger push_change_appointment before update on appointments for each row
+  when (old.status is distinct from new.status or old.date is distinct from new.date or old.time is distinct from new.time or old.barber_id is distinct from new.barber_id)
+  execute function trg_push_appointment_change();
+
+create or replace function trg_push_sale() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin perform push_dispatch('sale', jsonb_build_object('id', new.id, 'actor', auth.uid())); return new; end $$;
+drop trigger if exists push_new_sale on sales;
+create trigger push_new_sale after insert on sales for each row execute function trg_push_sale();
+
+create or replace function trg_push_review() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin perform push_dispatch('review', jsonb_build_object('id', new.id)); return new; end $$;
+drop trigger if exists push_new_review on reviews;
+create trigger push_new_review after insert on reviews for each row execute function trg_push_review();
+
+create or replace function trg_push_waitlist() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin perform push_dispatch('waitlist', jsonb_build_object('id', new.id, 'actor', auth.uid())); return new; end $$;
+drop trigger if exists push_new_waitlist on waitlist;
+create trigger push_new_waitlist after insert on waitlist for each row execute function trg_push_waitlist();
+
+create or replace function trg_push_stock() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare lim int;
+begin
+  select coalesce((notify->>'lowStock')::int, 3) into lim from settings where id = 'main';
+  lim := coalesce(lim, 3);
+  if lim > 0 and new.active and new.stock <= lim and old.stock > lim then
+    perform push_dispatch('stock', jsonb_build_object('id', new.id));
+  end if;
+  return new;
+end $$;
+drop trigger if exists push_low_stock on products;
+create trigger push_low_stock after update of stock on products for each row execute function trg_push_stock();
+
+-- resumo da agenda de manhã (chamado pelo mesmo agendador dos lembretes)
+create or replace function push_daily_summary() returns void
+language plpgsql security definer set search_path = public as $$
+declare tz text; hhmm text; local_now timestamp; last text;
+begin
+  select coalesce((select value from private_config where key = 'timezone'), 'America/Sao_Paulo') into tz;
+  select coalesce(notify->>'summaryTime', '07:30') into hhmm from settings where id = 'main';
+  if coalesce(hhmm, '') = '' then return; end if;
+  local_now := (now() at time zone tz);
+  if (local_now::time - hhmm::time) not between interval '0' and interval '3 hours' then return; end if;
+  select value into last from private_config where key = 'summary_sent';
+  if last = local_now::date::text then return; end if;
+  insert into private_config(key, value) values ('summary_sent', local_now::date::text)
+    on conflict (key) do update set value = excluded.value;
+  perform push_dispatch('summary', jsonb_build_object('date', local_now::date));
+exception when others then raise warning 'push_daily_summary: %', sqlerrm;
+end $$;
+revoke execute on function push_daily_summary() from public, anon, authenticated;

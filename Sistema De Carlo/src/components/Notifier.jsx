@@ -7,7 +7,7 @@ import { serviceNames } from './Appointments'
 import { enablePush, pushStatus, showLocal } from '../lib/push'
 import { fmtDate, nowMin, relDay, safeLS, today, toMin } from '../lib/utils'
 
-export const NOTIFY_DEFAULTS = { newBooking: true, reminderMinutes: 15, dailySummary: true, browser: true, pollSeconds: 60 }
+export const NOTIFY_DEFAULTS = { newBooking: true, reminderMinutes: 15, dailySummary: true, browser: true, pollSeconds: 60, cancel: true, reschedule: true, noShow: true, confirm: true, sales: true, reviews: true, waitlist: true, lowStock: 3, summaryTime: '07:30', selfToo: false }
 export const notifyCfg = (settings) => ({ ...NOTIFY_DEFAULTS, ...(settings?.notify || {}) })
 
 /** Avisos da gestão que esta pessoa ainda não leu */

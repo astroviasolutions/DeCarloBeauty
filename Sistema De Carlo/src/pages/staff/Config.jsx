@@ -127,6 +127,16 @@ export default function Config() {
               <Field label="Lembrete antes do atendimento"><select value={notify.reminderMinutes} onChange={(e) => setNotify('reminderMinutes', Number(e.target.value))}>{[0, 5, 10, 15, 30, 60].map((m) => <option key={m} value={m}>{m ? `${m} min antes` : 'Desligado'}</option>)}</select></Field>
               <Field label="Atualizar a agenda a cada"><select value={notify.pollSeconds} onChange={(e) => setNotify('pollSeconds', Number(e.target.value))}>{[30, 60, 120, 300].map((m) => <option key={m} value={m}>{m < 60 ? `${m} s` : `${m / 60} min`}</option>)}</select></Field>
             </div>
+            <h4 className="toggles-head">Avisos no celular</h4>
+            <p className="muted small">Chegam mesmo com o site fechado. Quem fez a ação não recebe o próprio aviso.</p>
+            {PUSH_EVENTS.map(([k, t, d]) => (
+              <label key={k} className="toggle-row"><span><b>{t}</b><small>{d}</small></span><span className="switch"><input type="checkbox" checked={notify[k] !== false} onChange={(e) => setNotify(k, e.target.checked)} /><span /></span></label>
+            ))}
+            <div className="form-grid">
+              <Field label="Resumo da agenda no celular"><select value={notify.summaryTime || ''} onChange={(e) => setNotify('summaryTime', e.target.value)}><option value="">Desligado</option>{['06:30', '07:00', '07:30', '08:00', '08:30', '09:00'].map((h) => <option key={h} value={h}>Todo dia às {h}</option>)}</select></Field>
+              <Field label="Avisar estoque baixo"><select value={notify.lowStock} onChange={(e) => setNotify('lowStock', Number(e.target.value))}><option value={0}>Desligado</option>{[1, 2, 3, 5, 10].map((n) => <option key={n} value={n}>Quando restar {n} ou menos</option>)}</select></Field>
+            </div>
+            <label className="toggle-row"><span><b>Avisar também o que eu mesmo fiz</b><small>Bom para testar sozinha. Depois do teste, pode desligar.</small></span><span className="switch"><input type="checkbox" checked={!!notify.selfToo} onChange={(e) => setNotify('selfToo', e.target.checked)} /><span /></span></label>
             <PushPanel />
           </div>
         </Card>
@@ -151,6 +161,16 @@ export default function Config() {
     </div>
   )
 }
+
+const PUSH_EVENTS = [
+  ['cancel', 'Cancelamento', 'Gestão e profissional. Mostra quem cancelou e se há lista de espera no dia'],
+  ['reschedule', 'Remarcação ou troca de profissional', 'Gestão e as profissionais envolvidas'],
+  ['confirm', 'Horário confirmado', 'Gestão e profissional'],
+  ['noShow', 'Cliente faltou', 'Gestão'],
+  ['sales', 'Atendimento concluído e vendas', 'Gestão: valor, forma de pagamento e profissional'],
+  ['reviews', 'Nova avaliação', 'Gestão e a profissional avaliada'],
+  ['waitlist', 'Lista de espera', 'Gestão, quando uma cliente entra na lista'],
+]
 
 /** Notificações neste aparelho (push) — usado em Ajustes e no Meu dia da profissional */
 export function PushPanel() {
