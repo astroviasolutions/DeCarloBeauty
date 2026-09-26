@@ -4,7 +4,7 @@ import { Bell, BellRing, CalendarPlus, Clock, Megaphone, Sun, X } from 'lucide-r
 import { useStore } from '../state/Store'
 import { Button, Modal } from './ui'
 import { serviceNames } from './Appointments'
-import { enablePush, pushStatus, showLocal } from '../lib/push'
+import { enablePush, pushStatus, showLocal, syncPush } from '../lib/push'
 import { fmtDate, nowMin, relDay, safeLS, today, toMin } from '../lib/utils'
 
 export const NOTIFY_DEFAULTS = { newBooking: true, reminderMinutes: 15, dailySummary: true, browser: true, pollSeconds: 60, cancel: true, reschedule: true, noShow: true, confirm: true, sales: true, reviews: true, waitlist: true, lowStock: 3, summaryTime: '07:30', selfToo: false }
@@ -52,12 +52,15 @@ export default function Notifier() {
   }, [session, actions, cfg.pollSeconds, cfg.browser])
 
   // convite para ativar as notificações neste aparelho (uma vez por aparelho)
+  const askKey = `dcb:perm-asked:${who}`
   useEffect(() => {
-    if (!cfg.browser || safeLS.get('dcb:perm-asked')) return
+    if (!session) return
+    syncPush().catch(() => {})
+    if (!cfg.browser || safeLS.get(askKey)) return
     pushStatus().then((st) => { if (st === 'off' || st === 'ios-install') setAskPerm(st) })
-  }, [cfg.browser])
+  }, [cfg.browser, session, askKey])
   const activate = async () => {
-    safeLS.set('dcb:perm-asked', 1)
+    safeLS.set(askKey, 1)
     try {
       const st = await enablePush()
       setAskPerm(false)
@@ -137,7 +140,7 @@ export default function Notifier() {
             <div className="notif-txt"><b>Receber alertas no celular?</b><small>Avisamos novos agendamentos, avisos da gestão e o próximo atendimento, mesmo com o site fechado.</small>
               <div className="notif-actions">
                 <Button size="sm" onClick={activate}>Ativar</Button>
-                <Button size="sm" variant="ghost" onClick={() => { safeLS.set('dcb:perm-asked', 1); setAskPerm(false) }}>Agora não</Button>
+                <Button size="sm" variant="ghost" onClick={() => { safeLS.set(askKey, 1); setAskPerm(false) }}>Agora não</Button>
               </div>
             </div>
           </div>
@@ -146,7 +149,7 @@ export default function Notifier() {
           <div className="notif-card perm">
             <span className="notif-ico"><BellRing size={18} /></span>
             <div className="notif-txt"><b>Alertas no iPhone</b><small>Toque em Compartilhar e depois em “Adicionar à Tela de Início”. Abra pelo ícone da De Carlo e ative as notificações.</small>
-              <div className="notif-actions"><Button size="sm" variant="ghost" onClick={() => { safeLS.set('dcb:perm-asked', 1); setAskPerm(false) }}>Entendi</Button></div>
+              <div className="notif-actions"><Button size="sm" variant="ghost" onClick={() => { safeLS.set(askKey, 1); setAskPerm(false) }}>Entendi</Button></div>
             </div>
           </div>
         )}

@@ -47,6 +47,16 @@ export async function pushStatus() {
   return sub && Notification.permission === 'granted' ? 'on' : 'off'
 }
 
+/** Garante que este aparelho está ligado a quem está logado agora (troca de login no mesmo celular) */
+export async function syncPush() {
+  if (!pushSupported() || !pushConfigured() || Notification.permission !== 'granted') return false
+  const reg = await registerSW()
+  const sub = await reg?.pushManager?.getSubscription()
+  if (!sub) return false
+  await db.savePush(sub.toJSON(), navigator.userAgent)
+  return true
+}
+
 /** Pede permissão, assina o push e salva no banco. Retorna o novo status. */
 export async function enablePush() {
   if (!pushSupported()) return isIOS() && !isStandalone() ? 'ios-install' : 'unsupported'
