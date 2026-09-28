@@ -209,6 +209,18 @@ alter table settings add column if not exists privacy jsonb not null default '{"
 alter table settings add column if not exists page jsonb not null default '{}';
 alter table barbers add column if not exists service_overrides jsonb not null default '{}';
 alter table barbers add column if not exists service_ids text[] not null default '{}';  -- serviços que ela faz (vazio = todos)
+alter table barbers add column if not exists lunch jsonb;  -- ["12:00","13:00"] almoço da profissional (vazio = intervalo geral)
+-- sincronização leve: o painel busca só o que mudou (economiza o tráfego do plano gratuito)
+alter table appointments add column if not exists updated_at timestamptz not null default now();
+alter table clients add column if not exists updated_at timestamptz not null default now();
+create index if not exists appointments_updated_idx on appointments(updated_at);
+create index if not exists clients_updated_idx on clients(updated_at);
+create index if not exists sales_created_idx on sales(created_at);
+create or replace function touch_updated_at() returns trigger language plpgsql as $$ begin new.updated_at := now(); return new; end $$;
+drop trigger if exists appointments_touch on appointments;
+create trigger appointments_touch before update on appointments for each row execute function touch_updated_at();
+drop trigger if exists clients_touch on clients;
+create trigger clients_touch before update on clients for each row execute function touch_updated_at();
 alter table photos add column if not exists private boolean not null default false;
 alter table staff add column if not exists email text;
 alter table clients add column if not exists anamnese jsonb not null default '{}'::jsonb;
@@ -226,7 +238,7 @@ $$ select barber_id from staff where user_id = auth.uid() $$;
 -- Vitrine pública das profissionais (sem telefone e sem comissões; só o tempo de cada procedimento)
 drop view if exists barbers_public;
 create view barbers_public as
-  select b.id, b.name, b.color, b.days_off, b.active, b.bio, b.service_ids,
+  select b.id, b.name, b.color, b.days_off, b.active, b.bio, b.service_ids, b.lunch,
          coalesce((select jsonb_object_agg(e.key, e.value->'duration') from jsonb_each(b.service_overrides) e
                    where coalesce(e.value->>'duration', '') <> ''), '{}'::jsonb) as durations,
          coalesce((select avg(stars) from reviews r where r.barber_id = b.id), 0) as rating_avg,
@@ -468,7 +480,8 @@ drop policy if exists "ann_read" on announcements;  create policy "ann_read" on 
 drop policy if exists "ann_admin" on announcements; create policy "ann_admin" on announcements for all to authenticated using (is_admin()) with check (is_admin());
 
 -- ---------- Área da profissional (agenda própria e privacidade) ----------
-create or replace function pro_data() returns jsonb
+drop function if exists pro_data();
+create or replace function pro_data(p_since timestamptz default null) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare me text := my_barber_id(); hide boolean;
 begin
@@ -476,11 +489,11 @@ begin
   select coalesce((privacy->>'hideContacts')::boolean, true) into hide from settings where id = 'main';
   return jsonb_build_object(
     'appointments', coalesce((select jsonb_agg(case when hide then to_jsonb(a) || jsonb_build_object('client_phone', '') else to_jsonb(a) end)
-                   from appointments a where a.barber_id = me and a.date >= current_date - 120), '[]'),
-    'clients', coalesce((select jsonb_agg(case when hide then to_jsonb(c) || jsonb_build_object('phone', '') else to_jsonb(c) end) from clients c), '[]')
+                   from appointments a where a.barber_id = me and a.date >= current_date - 120 and (p_since is null or a.updated_at > p_since)), '[]'),
+    'clients', coalesce((select jsonb_agg(case when hide then to_jsonb(c) || jsonb_build_object('phone', '') else to_jsonb(c) end) from clients c where p_since is null or c.updated_at > p_since), '[]')
   );
 end $$;
-grant execute on function pro_data() to authenticated;
+grant execute on function pro_data(timestamptz) to authenticated;
 
 create or replace function pro_update_appointment(p_id text, p_patch jsonb) returns void
 language plpgsql security definer set search_path = public as $$
@@ -761,6 +774,9 @@ begin
   insert into private_config(key, value) values ('summary_sent', local_now::date::text)
     on conflict (key) do update set value = excluded.value;
   perform push_dispatch('summary', jsonb_build_object('date', local_now::date));
+  -- faxina diária: históricos técnicos não ocupam o espaço do banco
+  begin delete from cron.job_run_details where end_time < now() - interval '3 days'; exception when others then null; end;
+  begin delete from net._http_response where created < now() - interval '1 day'; exception when others then null; end;
 exception when others then raise warning 'push_daily_summary: %', sqlerrm;
 end $$;
 revoke execute on function push_daily_summary() from public, anon, authenticated;

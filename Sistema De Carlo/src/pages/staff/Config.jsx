@@ -125,7 +125,7 @@ export default function Config() {
             <label className="toggle-row"><span><b>Notificação do navegador</b><small>Também avisa com o site em segundo plano (cada aparelho precisa permitir)</small></span><span className="switch"><input type="checkbox" checked={notify.browser !== false} onChange={(e) => setNotify('browser', e.target.checked)} /><span /></span></label>
             <div className="form-grid">
               <Field label="Lembrete antes do atendimento"><select value={notify.reminderMinutes} onChange={(e) => setNotify('reminderMinutes', Number(e.target.value))}>{[0, 5, 10, 15, 30, 60].map((m) => <option key={m} value={m}>{m ? `${m} min antes` : 'Desligado'}</option>)}</select></Field>
-              <Field label="Atualizar a agenda a cada"><select value={notify.pollSeconds} onChange={(e) => setNotify('pollSeconds', Number(e.target.value))}>{[30, 60, 120, 300].map((m) => <option key={m} value={m}>{m < 60 ? `${m} s` : `${m / 60} min`}</option>)}</select></Field>
+              <Field label="Atualizar a agenda a cada"><select value={notify.pollSeconds} onChange={(e) => setNotify('pollSeconds', Number(e.target.value))}>{[60, 120, 300].map((m) => <option key={m} value={m}>{m < 60 ? `${m} s` : `${m / 60} min`}</option>)}</select></Field>
             </div>
             <h4 className="toggles-head">Avisos no celular</h4>
             <p className="muted small">Chegam mesmo com o site fechado. Quem fez a ação não recebe o próprio aviso.</p>

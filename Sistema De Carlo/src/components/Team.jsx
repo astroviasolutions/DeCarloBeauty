@@ -63,23 +63,26 @@ export function Arena({ highlightId, only }) {
 }
 
 /** Bloquear horário / folga */
-export function BlockModal({ open, onClose, barberId: fixedBarber }) {
+export function BlockModal({ open, onClose, barberId: fixedBarber, edit = null }) {
   const { data, actions } = useStore()
-  const [f, setF] = useState({ barberId: fixedBarber || data.barbers.find((b) => b.active)?.id, date: today(), full: false, start: '12:00', end: '13:00', reason: '' })
+  const [f, setF] = useState(edit
+    ? { barberId: edit.barberId, date: edit.date, full: !edit.start, start: edit.start || '12:00', end: edit.end || '13:00', reason: edit.reason || '' }
+    : { barberId: fixedBarber || data.barbers.find((b) => b.active)?.id, date: today(), full: false, start: '12:00', end: '13:00', reason: '' })
+  const del = async () => { await actions.remove('blocks', edit.id, 'Bloqueio excluído'); onClose() }
   const save = async () => {
-    await actions.upsert('blocks', { barberId: fixedBarber || f.barberId, date: f.date, start: f.full ? null : f.start, end: f.full ? null : f.end, reason: f.reason || (f.full ? 'Folga' : 'Horário bloqueado') }, 'Horário bloqueado')
+    await actions.upsert('blocks', { ...(edit ? { id: edit.id } : {}), barberId: edit ? f.barberId : (fixedBarber || f.barberId), date: f.date, start: f.full ? null : f.start, end: f.full ? null : f.end, reason: f.reason || (f.full ? 'Folga' : 'Horário bloqueado') }, edit ? 'Bloqueio atualizado' : 'Horário bloqueado')
     onClose()
   }
   const valid = f.date && (f.full || f.start < f.end)
   return (
-    <Modal open={open} onClose={onClose} title="Bloquear horário" footer={<Button block icon={CalendarOff} disabled={!valid} onClick={save}>Bloquear</Button>}>
+    <Modal open={open} onClose={onClose} title={edit ? 'Editar bloqueio' : 'Bloquear horário'} footer={<>{edit && <Button variant="danger" onClick={del}>Excluir</Button>}<Button block icon={CalendarOff} disabled={!valid} onClick={save}>{edit ? 'Salvar' : 'Bloquear'}</Button></>}>
       <div className="form-grid">
-        {!fixedBarber && (
+        {!fixedBarber && !edit && (
           <Field label="Profissional" className="span-2">
             <select value={f.barberId} onChange={(e) => setF({ ...f, barberId: e.target.value })}>{data.barbers.filter((b) => b.active).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
           </Field>
         )}
-        <Field label="Dia"><input type="date" min={today()} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+        <Field label="Dia" required><input type="date" min={edit ? undefined : today()} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
         <Field label="Período">
           <div className="days">
             <button type="button" className={cls('pill', !f.full && 'on')} onClick={() => setF({ ...f, full: false })}>Horário</button>

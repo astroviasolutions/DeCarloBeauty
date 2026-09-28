@@ -70,6 +70,38 @@ export function createSupabaseDB(url, key) {
       return { settings: settingsRows[0], services, products, barbers, clients, appointments, sales, payouts, cash, plans, subscriptions, waitlist, blocks, reviews, promos, photos, expenses, announcements, staff }
     },
 
+    // ---- sincronização leve (economiza tráfego do plano gratuito) ----
+    /** tabelas pequenas, recarregadas depois de cada ação */
+    async loadSmall(session) {
+      const since = new Date(); since.setDate(since.getDate() - 120)
+      const from = since.toISOString().slice(0, 10)
+      const pro = (session?.role || role) === 'barber'
+      const [settingsRows, services, products, barbers, payouts, cash, plans, subscriptions, blocks, reviews, promos, announcements] = await Promise.all([
+        all('settings'), all('services', (q) => q.order('order')), all('products', (q) => q.order('name')), all('barbers', (q) => q.order('name')),
+        all('payouts'), all('cash', (q) => q.order('opened_at', { ascending: false }).limit(60)), all('plans', (q) => q.order('order')), all('subscriptions'),
+        allPaged('blocks', (q) => q.gte('date', from)), all('reviews'), all('promos'), all('announcements', (q) => q.order('created_at', { ascending: false }).limit(100)),
+      ])
+      const out = { settings: settingsRows[0], services, products, barbers, payouts, cash, plans, subscriptions, blocks, reviews, promos, announcements }
+      if (!pro) [out.waitlist, out.expenses, out.staff] = await Promise.all([all('waitlist', (q) => q.gte('date', today())), all('expenses'), all('staff')])
+      return out
+    },
+    /** só o que mudou desde a última sincronização (agendamentos, clientes, vendas e avisos) */
+    async loadChanges(sinceISO, session) {
+      const pro = (session?.role || role) === 'barber'
+      const [sales, announcements] = await Promise.all([
+        allPaged('sales', (q) => q.gt('created_at', sinceISO)),
+        all('announcements', (q) => q.order('created_at', { ascending: false }).limit(100)),
+      ])
+      if (pro) {
+        const r = must(await sb.rpc('pro_data', { p_since: sinceISO }))
+        return { appointments: (r.appointments || []).map(fromDb), clients: (r.clients || []).map(fromDb), sales, announcements }
+      }
+      const [appointments, clients] = await Promise.all([
+        allPaged('appointments', (q) => q.gt('updated_at', sinceISO)), allPaged('clients', (q) => q.gt('updated_at', sinceISO)),
+      ])
+      return { appointments, clients, sales, announcements }
+    },
+
     async busy(date) {
       return must(await sb.rpc('get_busy', { p_date: date })).map(fromDb)
     },

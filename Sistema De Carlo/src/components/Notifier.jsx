@@ -47,8 +47,11 @@ export default function Notifier() {
   // atualiza os dados de tempos em tempos (novos agendamentos aparecem sozinhos)
   useEffect(() => {
     if (!session) return undefined
-    const t = setInterval(() => { if (!document.hidden || cfg.browser) actions.reload() }, Math.max(20, Number(cfg.pollSeconds) || 60) * 1000)
-    return () => clearInterval(t)
+    // só com o painel na tela (em segundo plano quem avisa é o push) e buscando apenas o que mudou
+    const t = setInterval(() => { if (!document.hidden) actions.reload() }, Math.max(60, Number(cfg.pollSeconds) || 60) * 1000)
+    const onVis = () => { if (!document.hidden) actions.resume() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', onVis) }
   }, [session, actions, cfg.pollSeconds, cfg.browser])
 
   // convite para ativar as notificações neste aparelho (uma vez por aparelho)

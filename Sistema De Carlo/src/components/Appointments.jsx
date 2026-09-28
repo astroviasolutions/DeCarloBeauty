@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Ban, BellRing, CalendarDays, Camera, Check, Pencil, CircleCheck, ClipboardList, Clock, MessageCircle, Sparkles, UserRound, UserX } from 'lucide-react'
+import { Ban, BellRing, CalendarDays, Camera, Check, Pencil, Search, CircleCheck, ClipboardList, Clock, MessageCircle, Sparkles, UserRound, UserX } from 'lucide-react'
 import { useStore } from '../state/Store'
 import { Avatar, Button, Field, Modal, StatusBadge } from './ui'
 import Checkout from './Checkout'
 import { anamneseAlerts, ClientModal } from '../pages/staff/Cadastros'
 import { PortfolioModal } from './Loyalty'
-import { fmtDateLong, fmtPhone, freeSlots, maskPhone, money, onlyDigits, relDay, today, waLink, weekday } from '../lib/utils'
+import { fmtDateLong, fmtPhone, freeSlots, maskPhone, money, onlyDigits, relDay, today, toMin, waLink, weekday } from '../lib/utils'
 import { msg as fillMsg } from '../lib/messages'
 import { db } from '../data'
 import { doesService, totalDuration } from '../lib/commission'
@@ -94,6 +94,8 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
     ? { name: edit.clientName, phone: edit.clientPhone || '', serviceIds: edit.serviceIds, barberId: edit.barberId, date: edit.date, time: edit.time, notes: edit.notes || '' }
     : { name: '', phone: '', serviceIds: [], barberId: initialBarber || '', date: initialDate || today(), time: '' })
   const [busy, setBusy] = useState([])
+  const [cq, setCq] = useState('')
+  const [extra, setExtra] = useState(false) // encaixe fora do horário (só a equipe vê)
   useEffect(() => { if (open && !edit) setF((x) => ({ ...x, date: initialDate || x.date, time: initialTime || '', barberId: initialBarber || x.barberId || data.barbers.find((b) => b.active)?.id, serviceIds: x.serviceIds.length ? x.serviceIds : [data.services.find((s) => s.active)?.id].filter(Boolean) })) }, [open, initialDate, initialTime, initialBarber]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (open && f.date) actions.busy(f.date).then(setBusy) }, [open, f.date, actions])
 
@@ -105,7 +107,7 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
   const slots = useMemo(() => {
     if (!service || !barber) return []
     if (barber.daysOff?.includes(weekday(f.date))) return []
-    return freeSlots({ date: f.date, hours: data.settings.hours[weekday(f.date)], duration: Number(service.duration), step: Number(data.settings.slotStep || 30), breakTime: data.settings.breakTime, busy: busy.filter((b) => b.barberId === barber.id && !(edit && f.date === edit.date && b.barberId === edit.barberId && b.time === edit.time)) })
+    return freeSlots({ date: f.date, hours: data.settings.hours[weekday(f.date)], duration: Number(service.duration), step: Number(data.settings.slotStep || 30), breakTime: barber.lunch || data.settings.breakTime, busy: busy.filter((b) => b.barberId === barber.id && !(edit && f.date === edit.date && b.barberId === edit.barberId && b.time === edit.time)) })
   }, [service, barber, f.date, busy, data.settings, edit])
 
   const match = f.phone.length >= 4 ? data.clients.find((c) => onlyDigits(c.phone).endsWith(onlyDigits(f.phone)) && onlyDigits(f.phone).length >= 10) : null
@@ -117,36 +119,54 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
     await actions.staffBook({ clientName: f.name || match?.name, clientPhone: f.phone, barberId: f.barberId, serviceIds: f.serviceIds, date: f.date, time: f.time, duration: Number(service.duration), total: Number(service.price) })
     setF({ ...f, name: '', phone: '', time: '' }); onClose()
   }
+  const tMin = f.time ? toMin(f.time) : null
+  const extraOk = extra && tMin != null && service && !busy.some((b) => b.barberId === barber?.id && !(edit && f.date === edit.date && b.barberId === edit.barberId && b.time === edit.time) && tMin < toMin(b.time) + Number(b.duration) && tMin + Number(service.duration) > toMin(b.time))
   const keep = !!edit && f.date === edit.date && f.time === edit.time && f.barberId === edit.barberId && Number(service?.duration) <= Number(edit.duration)
-  const valid = (edit ? f.name : (f.name || match) && onlyDigits(f.phone).length >= 10) && f.serviceIds.every((id) => doesService(barber, id)) && f.time && (slots.includes(f.time) || keep) && service && barber
+  const valid = (edit ? f.name : (f.name || match) && onlyDigits(f.phone).length >= 10) && f.serviceIds.every((id) => doesService(barber, id)) && f.time && (slots.includes(f.time) || keep || extraOk) && service && barber
 
   return (
     <Modal open={open} onClose={onClose} title={edit ? 'Editar agendamento' : 'Novo agendamento'} footer={<Button block disabled={!valid} icon={Check} onClick={save}>{edit ? 'Salvar alterações' : 'Agendar'}</Button>}>
       <div className="form-grid">
-        {!edit && <Field label="WhatsApp do cliente"><input inputMode="tel" value={maskPhone(f.phone)} onChange={(e) => setF({ ...f, phone: onlyDigits(e.target.value) })} placeholder="(41) 99999-9999" /></Field>}
-        <Field label="Nome" hint={match && !edit ? `Cliente encontrado: ${match.name}` : ''}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={match?.name || 'Nome do cliente'} /></Field>
-        <Field label={`Serviços${service ? ` · ${money(service.price)} · ${service.duration} min` : ''}`} className="span-2">
+        {!edit && (
+          <Field label="Buscar cliente cadastrada" className="span-2">
+            <div className="search"><Search size={16} /><input value={cq} onChange={(e) => setCq(e.target.value)} placeholder="Nome ou telefone" /></div>
+            {cq.trim().length >= 2 && (() => {
+              const t = cq.trim().toLowerCase(); const d = onlyDigits(cq)
+              const hits = data.clients.filter((c) => c.name.toLowerCase().includes(t) || (d.length >= 3 && onlyDigits(c.phone).includes(d))).slice(0, 6)
+              return <div className="client-hits">{hits.map((c) => <button key={c.id} type="button" onClick={() => { setF({ ...f, name: c.name, phone: onlyDigits(c.phone).startsWith('sem') ? '' : onlyDigits(c.phone) }); setCq('') }}><b>{c.name}</b><small>{fmtPhone(c.phone)}</small></button>)}{!hits.length && <small className="muted">Nenhuma cliente encontrada. Preencha abaixo para cadastrar.</small>}</div>
+            })()}
+          </Field>
+        )}
+        {!edit && <Field label="WhatsApp do cliente" required><input inputMode="tel" value={maskPhone(f.phone)} onChange={(e) => setF({ ...f, phone: onlyDigits(e.target.value) })} placeholder="(41) 99999-9999" /></Field>}
+        <Field label="Nome" required hint={match && !edit ? `Cliente encontrado: ${match.name}` : ''}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={match?.name || 'Nome do cliente'} /></Field>
+        <Field label={`Serviços${service ? ` · ${money(service.price)} · ${service.duration} min` : ''}`} required className="span-2">
           <div className="days">
             {offered.map((s) => (
               <button key={s.id} type="button" className={`pill ${f.serviceIds.includes(s.id) ? 'on' : ''}`} onClick={() => toggleSvc(s.id)}>{s.name}</button>
             ))}
           </div>
         </Field>
-        <Field label="Profissional">
+        <Field label="Profissional" required>
           <select value={f.barberId} disabled={lockBarber} onChange={(e) => { const nb = data.barbers.find((b) => b.id === e.target.value); setF({ ...f, barberId: e.target.value, time: '', serviceIds: f.serviceIds.filter((id) => doesService(nb, id)) }) }}>
             {data.barbers.filter((b) => b.active || b.id === f.barberId).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         </Field>
-        <Field label="Dia"><input type="date" value={f.date} min={today()} onChange={(e) => setF({ ...f, date: e.target.value, time: '' })} /></Field>
+        <Field label="Dia" required><input type="date" value={f.date} min={today()} onChange={(e) => setF({ ...f, date: e.target.value, time: '' })} /></Field>
         {edit && <Field label="Observações" className="span-2"><input value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Opcional" /></Field>}
       </div>
-      <Field label="Horário livre">
+      <label className="toggle-row mb-sm"><span><b>Encaixe fora do horário</b><small>Ex.: bem cedo ou depois de fechar. Só a equipe vê; a cliente não consegue marcar nesses horários pelo site.</small></span><span className="switch"><input type="checkbox" checked={extra} onChange={(e) => { setExtra(e.target.checked); setF({ ...f, time: '' }) }} /><span /></span></label>
+      {extra && (
+        <Field label="Horário do encaixe" required hint={f.time && !extraOk ? 'Esse horário bate com outro atendimento dessa profissional.' : ''}>
+          <input type="time" value={f.time} onChange={(e) => setF({ ...f, time: e.target.value })} />
+        </Field>
+      )}
+      {!extra && <Field label="Horário livre" required>
         {keep && <p className="muted small">Mantendo {f.time}. Para mudar, escolha outro horário abaixo.</p>}
         {f.time && !keep && !slots.includes(f.time) && slots.length > 0 && <p className="form-err">O horário {f.time} não cabe esse(s) serviço(s) com esta profissional. Escolha outro abaixo.</p>}
         {slots.length ? (
           <div className="slot-grid">{slots.map((t) => <button key={t} className={`slot ${f.time === t ? 'on' : ''}`} onClick={() => setF({ ...f, time: t })}>{t}</button>)}</div>
         ) : <p className="muted">Sem horários livres para esta profissional neste dia.</p>}
-      </Field>
+      </Field>}
     </Modal>
   )
 }

@@ -105,7 +105,7 @@ export default function Booking() {
     for (const b of able) {
       if (b.daysOff?.includes(weekday(date))) { out[b.id] = []; continue }
       out[b.id] = freeSlots({
-        date, hours, duration: totalDuration(service.list, b), step: Number(settings.slotStep || 30), breakTime: settings.breakTime,
+        date, hours, duration: totalDuration(service.list, b), step: Number(settings.slotStep || 30), breakTime: b.lunch || settings.breakTime,
         busy: busy.filter((x) => x.barberId === b.id),
       })
     }
@@ -411,10 +411,10 @@ export default function Booking() {
                 </div>
                 {(promo || portal?.birthdayMonth || portal?.club) && <p className="muted small mt-sm">Descontos e benefícios são aplicados no pagamento, na clínica.</p>}
                 <form className="me-form" onSubmit={confirm}>
-                  <Field label="Seu nome">
+                  <Field label="Seu nome" required>
                     <input autoComplete="name" value={me.name} onChange={(e) => setMe({ ...me, name: e.target.value })} placeholder="Como podemos te chamar?" />
                   </Field>
-                  <Field label="WhatsApp" hint="Enviamos a confirmação por aqui.">
+                  <Field label="WhatsApp" required hint="Enviamos a confirmação por aqui.">
                     <input inputMode="tel" autoComplete="tel" value={maskPhone(me.phone)} onChange={(e) => setMe({ ...me, phone: onlyDigits(e.target.value) })} placeholder="(41) 99999-9999" />
                   </Field>
                   {!portal?.client?.birthday && (

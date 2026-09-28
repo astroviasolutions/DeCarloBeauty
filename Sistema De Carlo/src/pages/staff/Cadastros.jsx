@@ -83,6 +83,7 @@ export function ClientModal({ c: raw, onClose, restricted = false }) {
   const setA = (k, v) => setAn((x) => ({ ...x, [k]: v }))
   const [bday, setBday] = useState(c.birthday ? `${c.birthday.slice(3)}/${c.birthday.slice(0, 2)}` : '')
   const bdayISO = (() => { const d = onlyDigits(bday); return d.length === 4 ? `${d.slice(2)}-${d.slice(0, 2)}` : '' })()
+  const [hq, setHq] = useState('')
   const history = data.appointments.filter((a) => a.clientId === c.id).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))
   const back = fillMsg(data.settings, 'callClient', { nome: c.name.split(' ')[0], link: bookingLink() })
   return (
@@ -113,9 +114,10 @@ export function ClientModal({ c: raw, onClose, restricted = false }) {
       </div>
       <h4 className="sub-title">Portfólio da cliente</h4>
       <ClientPortfolio client={c} barberId={session?.barberId} />
-      <h4 className="sub-title">Histórico</h4>
+      <h4 className="sub-title">Histórico ({history.length})</h4>
+      {history.length > 5 && <div className="search mb-sm"><Search size={16} /><input placeholder="Buscar no histórico (serviço, profissional, data)" value={hq} onChange={(e) => setHq(e.target.value)} /></div>}
       <div className="list compact">
-        {history.slice(0, 12).map((a) => (
+        {history.filter((a) => !hq.trim() || `${serviceNames(a, data.services)} ${data.barbers.find((b) => b.id === a.barberId)?.name || ''} ${fmtDate(a.date)} ${a.status}`.toLowerCase().includes(hq.trim().toLowerCase())).slice(0, hq.trim() ? 60 : 12).map((a) => (
           <div key={a.id} className="sale-row">
             <span className="appt-time">{fmtDate(a.date)}</span>
             <span className="appt-info"><b>{serviceNames(a, data.services)}</b><small>{data.barbers.find((b) => b.id === a.barberId)?.name} · {a.time}</small></span>
@@ -255,12 +257,12 @@ export function Catalogo() {
       }>
         {edit && (
           <div className="form-grid">
-            <Field label="Nome" className="span-2"><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
+            <Field label="Nome" required className="span-2"><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
             {isSvc && <Field label="Descrição" className="span-2"><input value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></Field>}
-            <Field label="Preço (R$)"><input inputMode="decimal" value={edit.price} onChange={(e) => setEdit({ ...edit, price: e.target.value })} /></Field>
+            <Field label="Preço (R$)" required><input inputMode="decimal" value={edit.price} onChange={(e) => setEdit({ ...edit, price: e.target.value })} /></Field>
             <Field label="Comissão (%)"><input inputMode="numeric" value={edit.commission} onChange={(e) => setEdit({ ...edit, commission: e.target.value })} /></Field>
             {isSvc ? (
-              <Field label="Duração padrão (min)"><input inputMode="numeric" value={edit.duration} onChange={(e) => setEdit({ ...edit, duration: onlyDigits(e.target.value).slice(0, 3) })} /></Field>
+              <Field label="Duração padrão (min)" required><input inputMode="numeric" value={edit.duration} onChange={(e) => setEdit({ ...edit, duration: onlyDigits(e.target.value).slice(0, 3) })} /></Field>
             ) : (
               <Field label="Estoque"><input inputMode="numeric" value={edit.stock} onChange={(e) => setEdit({ ...edit, stock: e.target.value })} /></Field>
             )}
@@ -343,8 +345,14 @@ export function Equipe() {
       <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? 'Editar profissional' : 'Nova profissional'} footer={<Button block onClick={save} disabled={!edit?.name}>Salvar</Button>}>
         {edit && (
           <div className="form-grid">
-            <Field label="Nome" className="span-2"><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
+            <Field label="Nome" required className="span-2"><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
             <Field label="WhatsApp"><input inputMode="tel" value={maskPhone(edit.phone)} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} /></Field>
+            <Field label="Almoço (opcional)" hint="Vazio = usa o intervalo geral de Ajustes">
+              <div className="range">
+                <input type="time" aria-label="Início do almoço" value={edit.lunch?.[0] || ''} onChange={(e) => setEdit({ ...edit, lunch: e.target.value ? [e.target.value, edit.lunch?.[1] || '13:00'] : null })} />
+                <input type="time" aria-label="Fim do almoço" value={edit.lunch?.[1] || ''} disabled={!edit.lunch} onChange={(e) => setEdit({ ...edit, lunch: [edit.lunch[0], e.target.value] })} />
+              </div>
+            </Field>
             {isDemo ? <Field label="PIN de acesso (4 dígitos)"><input inputMode="numeric" maxLength={4} value={edit.pin} onChange={(e) => setEdit({ ...edit, pin: onlyDigits(e.target.value).slice(0, 4) })} /></Field>
               : <Field label="E-mail de acesso" hint={linked(edit.id) ? `Vinculado: ${linked(edit.id)}` : 'Crie o usuário em Supabase → Authentication e vincule aqui'}>
                   <div className="range"><input type="email" value={edit.accessEmail ?? ''} onChange={(e) => setEdit({ ...edit, accessEmail: e.target.value })} placeholder={linked(edit.id) || 'email@da.profissional'} />
@@ -395,5 +403,5 @@ function cleanOverrides(o = {}) {
 }
 
 /** Campos da profissional que vão para o banco (sem os calculados na tela) */
-const stripBarber = ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds }) =>
-  ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds: serviceIds || [] })
+const stripBarber = ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds, lunch }) =>
+  ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds: serviceIds || [], lunch: lunch || null })

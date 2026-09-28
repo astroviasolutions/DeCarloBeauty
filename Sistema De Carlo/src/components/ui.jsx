@@ -28,13 +28,13 @@ export function Button({ variant = 'primary', size, icon: Icon, children, classN
   )
 }
 
-export function Field({ label, hint, children, className }) {
+export function Field({ label, hint, children, className, required }) {
   // <label> só envolve um campo simples; grupos com botões viram <div role="group">
   const single = children && !Array.isArray(children) && ['input', 'select', 'textarea'].includes(children.type)
   const Tag = single ? 'label' : 'div'
   return (
     <Tag className={cls('field', className)} {...(single ? {} : { role: 'group', 'aria-label': typeof label === 'string' ? label : undefined })}>
-      {label && <span className="field-label">{label}</span>}
+      {label && <span className="field-label">{label}{required && <b className="req"> *</b>}</span>}
       {children}
       {hint && <span className="field-hint">{hint}</span>}
     </Tag>

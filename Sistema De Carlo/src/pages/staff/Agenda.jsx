@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
-import { CalendarOff, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { CalendarOff, ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react'
 import { useStore } from '../../state/Store'
 import { Avatar, Badge, Button, Card, Empty, Segmented, Stat, StatusBadge } from '../../components/ui'
 import { BlockModal, WaitlistPanel } from '../../components/Team'
-import { AppointmentModal, NewAppointmentModal, serviceNames } from '../../components/Appointments'
+import { AppointmentModal, ApptRow, NewAppointmentModal, serviceNames } from '../../components/Appointments'
 import {
   addDays, cls, endOfMonth, fmtDate, fmtDateLong, money, MONTHS, nowMin, parseDate, relDay, startOfMonth, startOfWeek, STATUS, sum, today, toHHMM, toMin, WD_SHORT, weekday,
 } from '../../lib/utils'
@@ -26,6 +26,8 @@ export default function Agenda({ onlyBarberId }) {
   const [sel, setSel] = useState(null)
   const [newFor, setNewFor] = useState(null)
   const [blockOpen, setBlockOpen] = useState(false)
+  const [editBlock, setEditBlock] = useState(null)
+  const [q, setQ] = useState('')
 
   const barbers = data.barbers.filter((b) => b.active && (!onlyBarberId || b.id === onlyBarberId) && (onlyBarberId || who === 'all' || b.id === who))
   const ids = new Set(barbers.map((b) => b.id))
@@ -84,6 +86,7 @@ export default function Agenda({ onlyBarberId }) {
             {data.barbers.filter((b) => b.active).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         )}
+        <div className="search"><Search size={16} /><input placeholder="Buscar cliente, telefone ou serviço" value={q} onChange={(e) => setQ(e.target.value)} /></div>
         <select className="agenda-select" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
           <option value="ativos">Sem cancelados</option>
           <option value="todos">Todos os status</option>
@@ -91,7 +94,18 @@ export default function Agenda({ onlyBarberId }) {
         </select>
       </div>
 
-      {view === 'dia' && <DayGrid date={date} barbers={barbers} appts={inSpan} onPick={setSel} onBook={book} />}
+      {q.trim().length >= 2 && (() => {
+        const t = q.trim().toLowerCase(); const d = t.replace(/\D/g, '')
+        const found = appts.filter((a) => a.clientName.toLowerCase().includes(t) || (d.length >= 3 && String(a.clientPhone || '').includes(d)) || serviceNames(a, data.services).toLowerCase().includes(t))
+          .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)).slice(0, 40)
+        return (
+          <Card title={`Busca: ${found.length}${found.length === 40 ? '+' : ''} agendamentos`} className="mb">
+            <div className="list compact">{found.map((a) => <div key={a.id} className="search-hit"><small className="muted">{fmtDate(a.date)}</small><ApptRow a={a} onClick={() => setSel(a)} /></div>)}
+              {!found.length && <p className="muted">Nada encontrado.</p>}</div>
+          </Card>
+        )
+      })()}
+      {view === 'dia' && <DayGrid date={date} barbers={barbers} appts={inSpan} onPick={setSel} onBook={book} onBlock={setEditBlock} />}
       {view === 'semana' && <WeekView from={span.from} appts={inSpan} onPick={setSel} onBook={book} onOpenDay={openDay} />}
       {view === 'mes' && <MonthView date={date} appts={inSpan} onOpenDay={openDay} onBook={book} />}
       {view === 'periodo' && <PeriodList appts={inSpan} onPick={setSel} />}
@@ -99,18 +113,21 @@ export default function Agenda({ onlyBarberId }) {
       {view === 'dia' && !onlyBarberId && <Card title={`Lista de espera · ${relDay(date)}`} className="mt"><WaitlistPanel date={date} /></Card>}
       {sel && <AppointmentModal appt={sel} onClose={() => setSel(null)} />}
       <BlockModal open={blockOpen} onClose={() => setBlockOpen(false)} barberId={onlyBarberId} />
+      {editBlock && <BlockModal open edit={editBlock} onClose={() => setEditBlock(null)} barberId={onlyBarberId} />}
       <NewAppointmentModal open={!!newFor} onClose={() => setNewFor(null)} date={newFor?.date} time={newFor?.time} barberId={newFor?.barberId} lockBarber={!!onlyBarberId} />
     </div>
   )
 }
 
 /* ---------- Dia: grade por profissional (clique no horário vazio agenda) ---------- */
-function DayGrid({ date, barbers, appts, onPick, onBook }) {
+function DayGrid({ date, barbers, appts, onPick, onBook, onBlock }) {
   const { data } = useStore()
   const hours = data.settings.hours[weekday(date)] || ['09:00', '19:00']
-  const open = toMin(hours[0])
-  const close = toMin(hours[1])
   const step = Number(data.settings.slotStep || 30)
+  // a grade cresce para mostrar encaixes fora do horário (ex.: bem cedo)
+  const dayBlocks = data.blocks.filter((x) => x.date === date && x.start)
+  const open = Math.floor(Math.min(toMin(hours[0]), ...appts.map((a) => toMin(a.time)), ...dayBlocks.map((x) => toMin(x.start))) / step) * step
+  const close = Math.ceil(Math.max(toMin(hours[1]), ...appts.map((a) => toMin(a.time) + Number(a.duration)), ...dayBlocks.map((x) => toMin(x.end))) / step) * step
   const rows = []
   for (let m = open; m < close; m += step) rows.push(m)
   const closed = !data.settings.hours[weekday(date)]
@@ -149,8 +166,9 @@ function DayGrid({ date, barbers, appts, onPick, onBook }) {
                 {data.blocks.filter((x) => x.barberId === b.id && x.date === date).map((x) => {
                   const st = x.start ? toMin(x.start) : open
                   const en = x.end ? toMin(x.end) : close
-                  return <div key={x.id} className="cal-block" style={{ top: (st - open) * PX_PER_MIN, height: (en - st) * PX_PER_MIN }}><b>{x.reason}</b><small>{x.start ? `${x.start}–${x.end}` : 'Dia inteiro'}</small></div>
+                  return <button key={x.id} type="button" className="cal-block" style={{ top: (st - open) * PX_PER_MIN, height: (en - st) * PX_PER_MIN }} onClick={() => onBlock?.(x)} title="Editar ou excluir bloqueio"><b>{x.reason}</b><small>{x.start ? `${x.start}–${x.end}` : 'Dia inteiro'} · editar</small></button>
                 })}
+                {!off && (b.lunch || data.settings.breakTime) && (() => { const [ls, le] = b.lunch || data.settings.breakTime; return <div className="cal-lunch" style={{ top: (toMin(ls) - open) * PX_PER_MIN, height: (toMin(le) - toMin(ls)) * PX_PER_MIN }}><small>Almoço {ls}–{le}</small></div> })()}
                 {appts.filter((a) => a.barberId === b.id).map((a) => (
                   <button key={a.id} className={cls('cal-ev', `st-${a.status}`, a.duration < 30 && 'short')} style={{ top: (toMin(a.time) - open) * PX_PER_MIN + 1, height: Math.max(26, a.duration * PX_PER_MIN - 3) }} onClick={() => onPick(a)}>
                     <b>{a.time} · {a.clientName.split(' ')[0]}</b>
