@@ -21,6 +21,16 @@ export function createSupabaseDB(url, key) {
   const sb = createClient(url, key)
   const must = ({ data, error }) => { if (error) throw new Error(error.message); return data }
   const all = async (t, q = (x) => x) => must(await q(sb.from(t).select('*'))).map(fromDb)
+  // tabelas grandes: o Supabase entrega no máximo 1000 linhas por vez, então busca em páginas
+  const allPaged = async (t, q = (x) => x) => {
+    const out = []
+    for (let i = 0; ; i += 1000) {
+      const rows = must(await q(sb.from(t).select('*')).order('id').range(i, i + 999))
+      out.push(...rows)
+      if (rows.length < 1000) break
+    }
+    return out.map(fromDb)
+  }
   let role = null // 'admin' | 'barber' — define o caminho de leitura/escrita
 
   return {
@@ -43,8 +53,8 @@ export function createSupabaseDB(url, key) {
       const pro = (session?.role || role) === 'barber'
       const [settingsRows, services, products, barbers, sales, payouts, cash, plans, subscriptions, blocks, reviews, promos, photos, announcements] = await Promise.all([
         all('settings'), all('services', (q) => q.order('order')), all('products', (q) => q.order('name')), all('barbers', (q) => q.order('name')),
-        all('sales', (q) => q.gte('date', from)), all('payouts'), all('cash', (q) => q.order('opened_at', { ascending: false }).limit(60)),
-        all('plans', (q) => q.order('order')), all('subscriptions'), all('blocks', (q) => q.gte('date', from)),
+        allPaged('sales', (q) => q.gte('date', from)), all('payouts'), all('cash', (q) => q.order('opened_at', { ascending: false }).limit(60)),
+        all('plans', (q) => q.order('order')), all('subscriptions'), allPaged('blocks', (q) => q.gte('date', from)),
         all('reviews'), all('promos'), all('photos', (q) => q.order('created_at').limit(400)), all('announcements', (q) => q.order('created_at', { ascending: false }).limit(100)),
       ])
       let clients; let appointments; let waitlist = []; let expenses = []; let staff = []
@@ -54,7 +64,7 @@ export function createSupabaseDB(url, key) {
         appointments = (r.appointments || []).map(fromDb); clients = (r.clients || []).map(fromDb)
       } else {
         ;[clients, appointments, waitlist, expenses, staff] = await Promise.all([
-          all('clients', (q) => q.order('name')), all('appointments', (q) => q.gte('date', from)), all('waitlist', (q) => q.gte('date', today())), all('expenses'), all('staff'),
+          allPaged('clients', (q) => q.order('name')), allPaged('appointments', (q) => q.gte('date', from)), all('waitlist', (q) => q.gte('date', today())), all('expenses'), all('staff'),
         ])
       }
       return { settings: settingsRows[0], services, products, barbers, clients, appointments, sales, payouts, cash, plans, subscriptions, waitlist, blocks, reviews, promos, photos, expenses, announcements, staff }
