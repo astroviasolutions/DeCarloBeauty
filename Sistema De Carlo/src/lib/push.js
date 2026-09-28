@@ -57,6 +57,20 @@ export async function syncPush() {
   return true
 }
 
+/** Cliente: ativa os lembretes deste celular para o número dela */
+export async function enableClientPush(phone) {
+  if (!pushSupported()) return isIOS() && !isStandalone() ? 'ios-install' : 'unsupported'
+  const perm = await Notification.requestPermission()
+  if (perm !== 'granted') return perm === 'denied' ? 'denied' : 'off'
+  if (!pushConfigured()) return 'on'
+  const reg = await registerSW()
+  if (!reg) return 'unsupported'
+  let sub = await reg.pushManager.getSubscription()
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID) })
+  await db.saveClientPush(sub.toJSON(), phone, navigator.userAgent)
+  return 'on'
+}
+
 /** Pede permissão, assina o push e salva no banco. Retorna o novo status. */
 export async function enablePush() {
   if (!pushSupported()) return isIOS() && !isStandalone() ? 'ios-install' : 'unsupported'

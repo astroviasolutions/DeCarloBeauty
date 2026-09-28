@@ -71,6 +71,8 @@ export function createDemoDB() {
     },
     async linkStaff() {},
     async savePush() {},
+    async saveClientPush() {},
+    async notifyAppointment() { return { client: 0, pro: 0, demo: true } },
     async removePush() {},
     async testPush() { return { sent: 0, demo: true } },
     async markRead(id, barberId) {

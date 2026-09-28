@@ -170,6 +170,7 @@ const PUSH_EVENTS = [
   ['sales', 'Atendimento concluído e vendas', 'Gestão: valor, forma de pagamento e profissional'],
   ['reviews', 'Nova avaliação', 'Gestão e a profissional avaliada'],
   ['waitlist', 'Lista de espera', 'Gestão, quando uma cliente entra na lista'],
+  ['clientReminders', 'Lembretes para a cliente', '1 dia, 1 hora e 15 min antes, no celular de quem ativou no site. Ela também é avisada quando a equipe confirma, remarca ou cancela'],
 ]
 
 /** Notificações neste aparelho (push) — usado em Ajustes e no Meu dia da profissional */

@@ -39,7 +39,7 @@ function dayLabel(iso: string) {
   return `${WD[d.getUTCDay()]}, ${iso.slice(8, 10)}/${iso.slice(5, 7)}`
 }
 
-async function send(subs: Sub[], msgFor: (s: Sub) => Msg | null) {
+async function send(subs: Sub[], msgFor: (s: Sub) => Msg | null, table = 'push_subscriptions') {
   let sent = 0, failed = 0
   await Promise.all(subs.map(async (s) => {
     const m = msgFor(s)
@@ -50,7 +50,7 @@ async function send(subs: Sub[], msgFor: (s: Sub) => Msg | null) {
     } catch (e) {
       failed++
       const code = (e as { statusCode?: number }).statusCode
-      if (code === 404 || code === 410) await db.from('push_subscriptions').delete().eq('endpoint', s.endpoint) // aparelho desinstalou/revogou
+      if (code === 404 || code === 410) await db.from(table).delete().eq('endpoint', s.endpoint) // aparelho desinstalou/revogou
       else console.error('push falhou', code, (e as Error).message)
     }
   }))
@@ -75,6 +75,11 @@ async function staffName(actor: unknown) {
   const { data } = await db.from('staff').select('name, role').eq('user_id', String(actor)).maybeSingle()
   return data ? (data.role === 'admin' ? 'pela gestão' : `por ${first(data.name)}`) : ''
 }
+async function clientSubs(phone: string) {
+  const { data } = await db.from('client_push').select('endpoint, keys').eq('phone', String(phone || '').replace(/\D/g, ''))
+  return ((data || []) as Sub[]).map((s) => ({ ...s, role: 'client', barber_id: null, user_id: '' }))
+}
+const sendClient = (phone: string, m: Msg) => clientSubs(phone).then((subs) => send(subs, () => m, 'client_push'))
 const agendaUrl = (s: Sub) => (s.role === 'admin' ? './#/painel/agenda' : './#/painel/minha-agenda')
 
 async function serviceNames(ids: string[]) {
@@ -99,6 +104,30 @@ Deno.serve(async (req) => {
       const { data: subs } = await db.from('push_subscriptions').select('*').eq('user_id', user.id)
       const r = await send((subs || []) as Sub[], () => ({ title: 'Teste de notificação 🦋', body: 'Tudo certo! As notificações da De Carlo Beauty estão chegando neste aparelho.', tag: 'test', url: './#/painel' }))
       return json(r)
+    }
+
+    // ---------- Lembrete manual pelo painel (botão no agendamento) ----------
+    if (type === 'manual') {
+      const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
+      const { data: { user } } = await db.auth.getUser(jwt)
+      if (!user) return json({ error: 'faça login no painel' }, 401)
+      const [{ data: st }, { data: a }] = await Promise.all([
+        db.from('staff').select('role, barber_id').eq('user_id', user.id).maybeSingle(),
+        db.from('appointments').select('*').eq('id', body.id).maybeSingle(),
+      ])
+      if (!st || !a || (st.role !== 'admin' && st.barber_id !== a.barber_id)) return json({ error: 'agendamento não encontrado' }, 404)
+      const [svc, { data: b }, { data: settings }] = await Promise.all([
+        serviceNames(a.service_ids),
+        db.from('barbers').select('name').eq('id', a.barber_id).maybeSingle(),
+        db.from('settings').select('shop_name').eq('id', 'main').maybeSingle(),
+      ])
+      const when = `${dayLabel(a.date)} às ${hm(a.time)}`
+      const shop = settings?.shop_name || 'De Carlo Beauty'
+      const [c, p] = await Promise.all([
+        sendClient(a.client_phone, { title: `Lembrete: ${when}`, body: `${first(a.client_name)}, seu horário de ${svc}${b?.name ? ` com ${first(b.name)}` : ''} está confirmado na ${shop}. Te esperamos!`, tag: `cli-${a.id}`, url: './#/meus' }),
+        audience({ barbers: [a.barber_id] }).then((subs) => send(subs, () => ({ title: `Lembrete: ${first(a.client_name)} ${when}`, body: svc, tag: `soon-${a.id}`, url: './#/painel/minha-agenda' }))),
+      ])
+      return json({ client: c.sent, pro: p.sent })
     }
 
     if (!fromDb) return json({ error: 'não autorizado' }, 401)
@@ -163,6 +192,19 @@ Deno.serve(async (req) => {
       return json({ sent, failed })
     }
 
+    // ---------- Lembrete automático da cliente (1 dia, 1 hora, 15 min) ----------
+    if (type === 'client_reminder') {
+      const { data: a } = await db.from('appointments').select('*').eq('id', body.id).maybeSingle()
+      if (!a || !['agendado', 'confirmado'].includes(a.status)) return json({ skipped: 'inativo' })
+      const [svc, { data: b }] = await Promise.all([serviceNames(a.service_ids), db.from('barbers').select('name').eq('id', a.barber_id).maybeSingle()])
+      const stage = Number(body.stage)
+      const title = stage >= 1440 ? `Lembrete: ${dayLabel(a.date)} às ${hm(a.time)}` : stage >= 60 ? `Seu horário é daqui a 1 hora (${hm(a.time)})` : `Faltam 15 minutos para o seu horário`
+      return json(await sendClient(a.client_phone, {
+        title, body: `${svc}${b?.name ? ` com ${first(b.name)}` : ''} · ${settings?.shop_name || 'De Carlo Beauty'}`,
+        tag: `cli-${a.id}`, url: './#/meus', important: stage <= 15,
+      }))
+    }
+
     // ---------- Cancelamento, remarcação, falta, confirmação ----------
     if (type === 'change') {
       const kind = String(body.kind || '')
@@ -213,6 +255,14 @@ Deno.serve(async (req) => {
       } else {
         subs = await audience({ admin: true, barbers: [a.barber_id], actor: body.actor, selfToo })
         msg = (s) => ({ title: 'Horário confirmado', body: `${who} · ${svc} · ${when}${whom(s)}`, tag: `confirm-${a.id}`, url: agendaUrl(s) })
+      }
+      // a cliente também fica sabendo quando a equipe mexe no horário dela
+      if (body.actor && ['cancel', 'reschedule', 'confirm'].includes(kind)) {
+        await sendClient(a.client_phone, kind === 'cancel'
+          ? { title: 'Seu horário foi cancelado', body: `${svc} · ${when}. Chame a gente no WhatsApp para remarcar.`, tag: `cli-${a.id}`, url: './#/meus' }
+          : kind === 'reschedule'
+            ? { title: 'Seu horário mudou', body: `${svc} · agora ${when}${bn(a.barber_id) ? ` com ${bn(a.barber_id)}` : ''}`, tag: `cli-${a.id}`, url: './#/meus' }
+            : { title: 'Horário confirmado ✓', body: `${svc} · ${when}${bn(a.barber_id) ? ` com ${bn(a.barber_id)}` : ''}`, tag: `cli-${a.id}`, url: './#/meus' })
       }
       return json(await send(subs, msg))
     }

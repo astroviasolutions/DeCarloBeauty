@@ -669,6 +669,7 @@ begin
   select coalesce((select value from private_config where key = 'timezone'), 'America/Sao_Paulo') into tz;
   select coalesce((notify->>'reminderMinutes')::int, 15) into mins from settings where id = 'main';
   perform push_daily_summary();
+  perform push_client_reminders();
   if coalesce(mins, 0) <= 0 then return 0; end if;
   local_now := (now() at time zone tz);
   with due as (
@@ -705,7 +706,7 @@ begin
     perform push_dispatch('change', jsonb_build_object('id', new.id, 'kind', k, 'actor', auth.uid(),
       'old_date', old.date, 'old_time', old.time, 'old_barber', old.barber_id));
   end if;
-  if k = 'reschedule' then new.reminded_at := null; end if;
+  if k = 'reschedule' then new.reminded_at := null; new.client_reminded := client_stages_passed(new.date, new.time); end if;
   return new;
 end $$;
 drop trigger if exists push_change_appointment on appointments;
@@ -763,3 +764,66 @@ begin
 exception when others then raise warning 'push_daily_summary: %', sqlerrm;
 end $$;
 revoke execute on function push_daily_summary() from public, anon, authenticated;
+
+
+-- =====================================================================
+-- LEMBRETES NO CELULAR DA CLIENTE (1 dia, 1 hora e 15 min antes)
+-- A cliente ativa no site depois de agendar (ou em "Meus horários").
+-- =====================================================================
+create table if not exists client_push (
+  endpoint text primary key,
+  phone text not null,
+  keys jsonb not null,
+  user_agent text default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists client_push_phone_idx on client_push(phone);
+alter table client_push enable row level security;   -- sem políticas: só as funções acessam
+alter table appointments add column if not exists client_reminded int[] not null default '{}';
+
+create or replace function save_client_push(p_endpoint text, p_keys jsonb, p_phone text, p_user_agent text default '') returns void
+language plpgsql security definer set search_path = public as $$
+declare v text := regexp_replace(coalesce(p_phone, ''), '\D', '', 'g');
+begin
+  if length(v) < 10 or not exists(select 1 from clients where phone = v) then raise exception 'Faça um agendamento com este número primeiro'; end if;
+  if coalesce(p_endpoint, '') = '' or p_keys is null then raise exception 'Aparelho inválido'; end if;
+  insert into client_push(endpoint, phone, keys, user_agent) values (p_endpoint, v, p_keys, left(coalesce(p_user_agent, ''), 300))
+  on conflict (endpoint) do update set phone = excluded.phone, keys = excluded.keys, user_agent = excluded.user_agent;
+end $$;
+grant execute on function save_client_push(text, jsonb, text, text) to anon, authenticated;
+
+-- lembretes que já "passaram" (ex.: agendou hoje para amanhã cedo → pula o de 1 dia)
+create or replace function client_stages_passed(p_date date, p_time time) returns int[]
+language sql stable security definer set search_path = public as $$
+  select coalesce(array_agg(x), '{}') from unnest(array[1440, 60, 15]) x
+  where x >= extract(epoch from ((p_date + p_time) - (now() at time zone coalesce((select value from private_config where key = 'timezone'), 'America/Sao_Paulo')))) / 60
+$$;
+
+create or replace function trg_client_reminded() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin new.client_reminded := client_stages_passed(new.date, new.time); return new; end $$;
+drop trigger if exists client_reminded_init on appointments;
+create trigger client_reminded_init before insert on appointments for each row execute function trg_client_reminded();
+
+create or replace function push_client_reminders() returns void
+language plpgsql security definer set search_path = public as $$
+declare tz text; local_now timestamp; r record;
+begin
+  if coalesce((select (notify->>'clientReminders')::boolean from settings where id = 'main'), true) = false then return; end if;
+  select coalesce((select value from private_config where key = 'timezone'), 'America/Sao_Paulo') into tz;
+  local_now := (now() at time zone tz);
+  for r in
+    select a.id, st.stage from appointments a
+    cross join lateral (select min(x) as stage from unnest(array[1440, 60, 15]) x
+                        where x >= extract(epoch from ((a.date + a.time) - local_now)) / 60) st
+    where a.status in ('agendado', 'confirmado')
+      and (a.date + a.time) > local_now and (a.date + a.time) <= local_now + interval '1 day'
+      and st.stage is not null and not (st.stage = any(a.client_reminded))
+      and exists(select 1 from client_push c where c.phone = a.client_phone)
+  loop
+    update appointments set client_reminded = array(select x from unnest(array[1440, 60, 15]) x where x >= r.stage) where id = r.id;
+    perform push_dispatch('client_reminder', jsonb_build_object('id', r.id, 'stage', r.stage));
+  end loop;
+exception when others then raise warning 'push_client_reminders: %', sqlerrm;
+end $$;
+revoke execute on function push_client_reminders() from public, anon, authenticated;

@@ -8,6 +8,8 @@ import { ClubPlans, PortfolioModal, RuneMeter, WaitlistModal } from '../componen
 import { promoFor } from '../lib/loyalty'
 import { msg as fillMsg } from '../lib/messages'
 import { doesAll, totalDuration } from '../lib/commission'
+import ClientPush from '../components/ClientPush'
+import AddToCalendar from '../components/AddToCalendar'
 import {
   addDays, cls, fmtDateLong, freeSlots, maskPhone, money, onlyDigits, parseDate, relDay, safeLS, today, toMin, waLink, WD_SHORT, weekday,
 } from '../lib/utils'
@@ -459,6 +461,8 @@ function Success({ done, settings, onAgain }) {
         <div><User size={18} /><span>{done.barber.name}</span><b /></div>
         {done.promo && <div className="perk"><Sparkles size={18} /><span>Promoção {done.promo.label}</span><b>-{done.promo.pct}%</b></div>}
       </div>
+      <ClientPush phone={done.clientPhone} />
+      <AddToCalendar ev={{ id: done.id, title: `${done.service.name} · ${settings.shopName || 'De Carlo Beauty'}`, date: done.date, time: done.time, duration: done.duration || done.service.duration, location: settings.address || '', details: `Com ${done.barber.name}. Para remarcar ou cancelar: ${location.origin}${location.pathname}#/meus` }} />
       <a className="btn btn-wa btn-lg btn-block" href={waLink(settings.whatsapp, msg)} target="_blank" rel="noreferrer">
         <MessageCircle size={18} /> Confirmar pelo WhatsApp
       </a>

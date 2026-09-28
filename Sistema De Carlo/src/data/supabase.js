@@ -149,6 +149,12 @@ export function createSupabaseDB(url, key) {
 
     // ---- Notificações push ----
     async savePush(sub, ua) { must(await sb.rpc('save_push_subscription', { p_endpoint: sub.endpoint, p_keys: sub.keys, p_user_agent: (ua || '').slice(0, 300) })) },
+    async saveClientPush(sub, phone, ua) { must(await sb.rpc('save_client_push', { p_endpoint: sub.endpoint, p_keys: sub.keys, p_phone: onlyDigits(phone), p_user_agent: (ua || '').slice(0, 300) })) },
+    async notifyAppointment(id) {
+      const { data, error } = await sb.functions.invoke('send-push', { body: { type: 'manual', id } })
+      if (error) throw new Error('A função de envio não respondeu. Tente de novo em instantes.')
+      return data
+    },
     async removePush(endpoint) { must(await sb.rpc('delete_push_subscription', { p_endpoint: endpoint })) },
     async testPush() {
       const { data, error } = await sb.functions.invoke('send-push', { body: { type: 'test' } })

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Ban, CalendarDays, Camera, Check, Pencil, CircleCheck, ClipboardList, Clock, MessageCircle, Sparkles, UserRound, UserX } from 'lucide-react'
+import { Ban, BellRing, CalendarDays, Camera, Check, Pencil, CircleCheck, ClipboardList, Clock, MessageCircle, Sparkles, UserRound, UserX } from 'lucide-react'
 import { useStore } from '../state/Store'
 import { Avatar, Button, Field, Modal, StatusBadge } from './ui'
 import Checkout from './Checkout'
@@ -7,6 +7,7 @@ import { anamneseAlerts, ClientModal } from '../pages/staff/Cadastros'
 import { PortfolioModal } from './Loyalty'
 import { fmtDateLong, fmtPhone, freeSlots, maskPhone, money, onlyDigits, relDay, today, waLink, weekday } from '../lib/utils'
 import { msg as fillMsg } from '../lib/messages'
+import { db } from '../data'
 import { doesService, totalDuration } from '../lib/commission'
 
 export function serviceNames(appt, services) {
@@ -20,6 +21,15 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
   const [ficha, setFicha] = useState(false)
   const [port, setPort] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [pinging, setPinging] = useState(false)
+  const ping = async () => {
+    setPinging(true)
+    try {
+      const r = await db.notifyAppointment(appt.id)
+      if (r?.demo) actions.notify('No modo demonstração a notificação não é enviada')
+      else actions.notify(`Lembrete enviado · cliente: ${r.client ? 'recebeu' : 'não ativou os lembretes'} · profissional: ${r.pro ? 'recebeu' : 'sem celular ativado'}`, r.client || r.pro ? undefined : 'bad')
+    } catch (e) { actions.notify(e.message, 'bad') } finally { setPinging(false) }
+  }
   if (!appt) return null
   const barber = data.barbers.find((b) => b.id === appt.barberId)
   const svc = serviceNames(appt, data.services)
@@ -65,6 +75,7 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
         )}
         <div className="appt-actions">
           {hasPhone && <a className="btn btn-wa" href={waLink(appt.clientPhone, reminder)} target="_blank" rel="noreferrer"><MessageCircle size={18} /> Lembrar no WhatsApp</a>}
+          {open && <Button variant="ghost" icon={BellRing} disabled={pinging} onClick={ping}>{pinging ? 'Enviando…' : 'Notificar no celular'}</Button>}
           {open && <Button variant="ghost" icon={Pencil} onClick={() => setEditing(true)}>Editar</Button>}
           {open && appt.status === 'agendado' && <Button variant="ghost" icon={Check} onClick={() => set('confirmado', 'Confirmado')}>Confirmar</Button>}
           {open && canCharge && <Button icon={CircleCheck} onClick={() => setCharging(true)}>Concluir e cobrar</Button>}

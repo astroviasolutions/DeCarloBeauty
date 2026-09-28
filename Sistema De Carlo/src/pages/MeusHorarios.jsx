@@ -5,6 +5,8 @@ import { useStore } from '../state/Store'
 import { Button, Field, Logo, RuneRule, ThemeToggle } from '../components/ui'
 import { RuneMeter } from '../components/Loyalty'
 import { serviceNames } from '../components/Appointments'
+import ClientPush from '../components/ClientPush'
+import AddToCalendar from '../components/AddToCalendar'
 import { fmtDateLong, maskPhone, money, onlyDigits, relDay, safeLS } from '../lib/utils'
 
 const ME_KEY = 'dcb:me'
@@ -61,6 +63,7 @@ export default function MeusHorarios() {
 
       {data && (
         <div className="portal-body fade-in">
+          <ClientPush phone={phone} />
           <section className="card">
             <div className="card-body">
               <div className="welcome-top">
@@ -102,6 +105,7 @@ export default function MeusHorarios() {
                       </div>
                     ) : (
                       <div className="portal-ask">
+                        <AddToCalendar compact ev={{ id: a.id, title: `${serviceNames(a, services)} · ${settings?.shopName || 'De Carlo Beauty'}`, date: a.date, time: a.time, duration: a.duration, location: settings?.address || '', details: `Com ${b?.name || 'a profissional'}.` }} />
                         <Button variant="ghost" size="sm" onClick={() => nav('/', { state: { rebook: { id: a.id, serviceIds: a.serviceIds, barberId: a.barberId, date: a.date, time: a.time, phone } } })}>Remarcar</Button>
                         <Button variant="danger" size="sm" icon={Ban} onClick={() => setAsking(a.id)}>Cancelar</Button>
                       </div>
