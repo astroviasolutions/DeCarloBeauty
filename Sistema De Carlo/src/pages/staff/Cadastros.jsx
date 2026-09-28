@@ -295,13 +295,21 @@ const COLORS = ['#B08A4A', '#86672F', '#C49A8A', '#8C6E63', '#6F7A6A', '#A7988A'
 export function Equipe() {
   const { data, actions, isDemo } = useStore()
   const [edit, setEdit] = useState(null)
-  const blank = { name: '', phone: '', pin: '', goal: 6000, color: COLORS[data.barbers.length % COLORS.length], serviceRate: null, productRate: null, daysOff: [0], active: true, bio: '', serviceOverrides: {} }
+  const blank = { name: '', phone: '', pin: '', goal: 6000, color: COLORS[data.barbers.length % COLORS.length], serviceRate: null, productRate: null, daysOff: [0], active: true, bio: '', serviceOverrides: {}, serviceIds: [] }
   const linked = (id) => data.staff?.find((x) => x.barberId === id)?.email || ''
   const save = async () => {
     const { accessEmail: _ae, ...clean } = edit
     const r = { ...clean, serviceOverrides: cleanOverrides(edit.serviceOverrides), goal: Number(edit.goal || 0), serviceRate: edit.serviceRate === '' || edit.serviceRate == null ? null : Number(edit.serviceRate), productRate: edit.productRate === '' || edit.productRate == null ? null : Number(edit.productRate), phone: onlyDigits(edit.phone) }
     if (!isDemo) delete r.pin
     await actions.upsert('barbers', r); setEdit(null)
+  }
+  const activeIds = data.services.filter((x) => x.active).map((x) => x.id)
+  const does = (sid) => !edit?.serviceIds?.length || edit.serviceIds.includes(sid)
+  const toggleSvc = (sid) => {
+    const cur = edit.serviceIds?.length ? edit.serviceIds.filter((x) => activeIds.includes(x)) : activeIds
+    const next = cur.includes(sid) ? cur.filter((x) => x !== sid) : [...cur, sid]
+    if (!next.length) return
+    setEdit({ ...edit, serviceIds: next.length === activeIds.length ? [] : next })
   }
   const toggleDay = (d) => setEdit({ ...edit, daysOff: edit.daysOff.includes(d) ? edit.daysOff.filter((x) => x !== d) : [...edit.daysOff, d] })
   const setOv = (sid, k, v) => setEdit({ ...edit, serviceOverrides: { ...(edit.serviceOverrides || {}), [sid]: { ...(edit.serviceOverrides?.[sid] || {}), [k]: v } } })
@@ -326,6 +334,7 @@ export function Equipe() {
             <small className="muted">Folga: {b.daysOff?.length ? b.daysOff.map((d) => WD_SHORT[d]).join(', ') : 'nenhuma'}</small>
             {(() => { const rs = data.reviews.filter((r) => r.barberId === b.id); const avg = rs.length ? rs.reduce((a, r) => a + r.stars, 0) / rs.length : 0; return rs.length ? <span className="team-rating"><Stars value={avg} size={12} /> {avg.toFixed(1)} · {rs.length}</span> : null })()}
             <small className="muted">Meta do mês: {money(b.goal || 0)} · {data.photos.filter((p) => p.barberId === b.id).length} fotos</small>
+            {b.serviceIds?.length > 0 && <small className="team-ov">Faz {b.serviceIds.filter((id) => data.services.some((x) => x.id === id && x.active)).length} de {data.services.filter((x) => x.active).length} serviços</small>}
             {ownCount(b) > 0 && <small className="team-ov">{ownCount(b)} procedimentos personalizados</small>}
             <Button variant="ghost" size="sm" icon={Pencil} onClick={() => setEdit({ ...b, serviceRate: b.serviceRate ?? '', productRate: b.productRate ?? '' })}>Editar</Button>
           </div>
@@ -353,12 +362,13 @@ export function Equipe() {
             </Field>
             <Field label="Status"><select value={edit.active ? '1' : '0'} onChange={(e) => setEdit({ ...edit, active: e.target.value === '1' })}><option value="1">Ativo</option><option value="0">Inativo</option></select></Field>
             <div className="span-2 ov-box">
-              <h4 className="sub-title">Tempo e comissão por procedimento</h4>
-              <p className="muted small">Deixe em branco para usar o tempo e a comissão padrão do Catálogo. O tempo muda os horários livres no agendamento.</p>
-              <div className="ov-table">
-                <div className="ov-row ov-head"><span>Procedimento</span><span>Tempo (min)</span><span>Comissão (%)</span></div>
+              <h4 className="sub-title">Serviços que ela faz · tempo e comissão</h4>
+              <p className="muted small">Desmarque o que ela não faz: o serviço some da agenda dela e do site. Tempo e comissão em branco usam o padrão do Catálogo.</p>
+              <div className="ov-table with-check">
+                <div className="ov-row ov-head"><span>Faz</span><span>Procedimento</span><span>Tempo (min)</span><span>Comissão (%)</span></div>
                 {data.services.filter((x) => x.active).map((x) => (
-                  <div key={x.id} className="ov-row">
+                  <div key={x.id} className={cls('ov-row', !does(x.id) && 'ov-off')}>
+                    <input type="checkbox" className="ov-check" aria-label={`Faz ${x.name}`} checked={does(x.id)} onChange={() => toggleSvc(x.id)} />
                     <span><b>{x.name}</b><small>padrão {x.duration} min · {x.commission}%</small></span>
                     <input inputMode="numeric" aria-label={`Tempo de ${x.name}`} placeholder={String(x.duration)} value={edit.serviceOverrides?.[x.id]?.duration ?? ''} onChange={(e) => setOv(x.id, 'duration', onlyDigits(e.target.value).slice(0, 3))} />
                     <input inputMode="decimal" aria-label={`Comissão de ${x.name}`} placeholder={String(edit.serviceRate !== '' && edit.serviceRate != null ? edit.serviceRate : x.commission)} value={edit.serviceOverrides?.[x.id]?.commission ?? ''} onChange={(e) => setOv(x.id, 'commission', e.target.value.replace(/[^\d.,]/g, '').replace(',', '.').slice(0, 5))} />
@@ -385,5 +395,5 @@ function cleanOverrides(o = {}) {
 }
 
 /** Campos da profissional que vão para o banco (sem os calculados na tela) */
-const stripBarber = ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides }) =>
-  ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides })
+const stripBarber = ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds }) =>
+  ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds: serviceIds || [] })

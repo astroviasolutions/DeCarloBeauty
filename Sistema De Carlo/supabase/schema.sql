@@ -208,6 +208,7 @@ alter table settings add column if not exists notify jsonb not null default '{"n
 alter table settings add column if not exists privacy jsonb not null default '{"hideContacts":true}';
 alter table settings add column if not exists page jsonb not null default '{}';
 alter table barbers add column if not exists service_overrides jsonb not null default '{}';
+alter table barbers add column if not exists service_ids text[] not null default '{}';  -- serviços que ela faz (vazio = todos)
 alter table photos add column if not exists private boolean not null default false;
 alter table staff add column if not exists email text;
 alter table clients add column if not exists anamnese jsonb not null default '{}'::jsonb;
@@ -225,7 +226,7 @@ $$ select barber_id from staff where user_id = auth.uid() $$;
 -- Vitrine pública das profissionais (sem telefone e sem comissões; só o tempo de cada procedimento)
 drop view if exists barbers_public;
 create view barbers_public as
-  select b.id, b.name, b.color, b.days_off, b.active, b.bio,
+  select b.id, b.name, b.color, b.days_off, b.active, b.bio, b.service_ids,
          coalesce((select jsonb_object_agg(e.key, e.value->'duration') from jsonb_each(b.service_overrides) e
                    where coalesce(e.value->>'duration', '') <> ''), '{}'::jsonb) as durations,
          coalesce((select avg(stars) from reviews r where r.barber_id = b.id), 0) as rating_avg,
@@ -259,6 +260,8 @@ begin
   if length(regexp_replace(p_client_phone, '\D', '', 'g')) < 10 then raise exception 'WhatsApp inválido'; end if;
   if not exists(select 1 from barbers where id = p_barber_id and active) then raise exception 'Profissional indisponível'; end if;
   if is_staff() and not is_admin() and p_barber_id is distinct from my_barber_id() then raise exception 'Você só pode agendar na sua própria agenda'; end if;
+  if exists(select 1 from barbers where id = p_barber_id and cardinality(service_ids) > 0 and not (p_service_ids <@ service_ids)) then
+    raise exception 'Essa profissional não faz esse serviço. Escolha outra, por favor.'; end if;
 
   -- preço e duração vêm do banco (a cliente não consegue alterar); o tempo pode ser próprio da profissional
   select coalesce(sum(s.price),0),
@@ -481,9 +484,29 @@ grant execute on function pro_data() to authenticated;
 
 create or replace function pro_update_appointment(p_id text, p_patch jsonb) returns void
 language plpgsql security definer set search_path = public as $$
+declare a appointments; v_date date; v_time time; v_svc text[]; v_dur int; v_total numeric;
 begin
   if not exists(select 1 from appointments where id = p_id and barber_id = my_barber_id()) then raise exception 'Agendamento não encontrado'; end if;
   if p_patch ? 'status' and p_patch->>'status' not in ('agendado','confirmado','faltou','cancelado') then raise exception 'Status inválido'; end if;
+  -- remarcar / trocar serviços na própria agenda (preço e tempo saem do banco)
+  if p_patch ?| array['date', 'time', 'service_ids'] then
+    select * into a from appointments where id = p_id;
+    if a.status not in ('agendado', 'confirmado') then raise exception 'Esse agendamento não pode mais ser editado'; end if;
+    v_date := coalesce((p_patch->>'date')::date, a.date);
+    v_time := coalesce((p_patch->>'time')::time, a.time);
+    v_svc := case when p_patch ? 'service_ids' then array(select jsonb_array_elements_text(p_patch->'service_ids')) else a.service_ids end;
+    if cardinality(v_svc) = 0 then v_svc := a.service_ids; end if;
+    if v_date < current_date then raise exception 'Data inválida'; end if;
+    if exists(select 1 from barbers where id = a.barber_id and cardinality(service_ids) > 0 and not (v_svc <@ service_ids)) then raise exception 'Você não faz esse serviço'; end if;
+    select coalesce(sum(s.price),0), coalesce(sum(coalesce(nullif(b.service_overrides->s.id->>'duration', '')::int, s.duration)),0)
+      into v_total, v_dur
+      from services s cross join (select service_overrides from barbers where id = a.barber_id) b where s.id = any(v_svc);
+    if v_dur = 0 then raise exception 'Serviço inválido'; end if;
+    if exists(select 1 from appointments x where x.id <> p_id and x.barber_id = a.barber_id and x.date = v_date and x.status not in ('cancelado','faltou')
+      and v_time < x.time + make_interval(mins => x.duration) and v_time + make_interval(mins => v_dur) > x.time)
+    then raise exception 'Conflito com outro agendamento nesse horário'; end if;
+    update appointments set date = v_date, time = v_time, service_ids = v_svc, duration = v_dur, total = v_total where id = p_id;
+  end if;
   update appointments set
     status = coalesce(p_patch->>'status', status),
     notes = coalesce(p_patch->>'notes', notes)

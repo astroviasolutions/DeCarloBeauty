@@ -1496,6 +1496,10 @@ body { background-image: radial-gradient(120% 70% at 50% -10%, rgba(227, 165, 15
 .ov-row input { height: 38px; text-align: center; }
 .ov-head { background: var(--surface-2); font-family: var(--f-cond); font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 .ov-head span:not(:first-child) { text-align: center; }
+.ov-table.with-check .ov-row { grid-template-columns: 22px minmax(0, 1fr) 96px 96px; }
+.ov-check { width: 18px; height: 18px !important; accent-color: var(--red); margin: 0; }
+.ov-row.ov-off > span, .ov-row.ov-off input:not(.ov-check) { opacity: .4; }
+@media (max-width: 480px) { .ov-table.with-check .ov-row { grid-template-columns: 22px minmax(0, 1fr) 64px 64px; } }
 @media (max-width: 480px) { .ov-row { grid-template-columns: minmax(0, 1fr) 72px 72px; gap: 6px; } }
 /* Portfólio na ficha da cliente */
 .client-port { display: flex; flex-direction: column; gap: 10px; }

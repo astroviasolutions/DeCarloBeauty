@@ -65,3 +65,7 @@ export function durationOf(service, barber) {
   return filled(ov) && Number(ov) > 0 ? Number(ov) : Number(service?.duration || 0)
 }
 export const totalDuration = (list, barber) => list.reduce((a, s) => a + durationOf(s, barber), 0)
+
+/** A profissional faz este serviço? (lista vazia = faz todos) */
+export const doesService = (b, sid) => !b?.serviceIds?.length || b.serviceIds.includes(sid)
+export const doesAll = (b, ids = []) => ids.every((id) => doesService(b, id))

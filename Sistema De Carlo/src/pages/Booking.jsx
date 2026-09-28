@@ -7,7 +7,7 @@ import { BRAND } from '../config/brand'
 import { ClubPlans, PortfolioModal, RuneMeter, WaitlistModal } from '../components/Loyalty'
 import { promoFor } from '../lib/loyalty'
 import { msg as fillMsg } from '../lib/messages'
-import { totalDuration } from '../lib/commission'
+import { doesAll, totalDuration } from '../lib/commission'
 import {
   addDays, cls, fmtDateLong, freeSlots, maskPhone, money, onlyDigits, parseDate, relDay, safeLS, today, toMin, waLink, WD_SHORT, weekday,
 } from '../lib/utils'
@@ -54,6 +54,9 @@ export default function Booking() {
       price: list.reduce((a, x) => a + Number(x.price), 0),
     }
   }, [picked, services])
+  // só as profissionais que fazem todos os serviços escolhidos
+  const able = useMemo(() => (service ? barbers.filter((b) => doesAll(b, service.ids)) : barbers), [barbers, service])
+  useEffect(() => { if (barberId !== 'any' && !able.some((b) => b.id === barberId)) setBarberId('any') }, [able, barberId])
   const togglePick = (id) => setPicked((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]))
 
   const days = useMemo(() => {
@@ -97,7 +100,7 @@ export default function Booking() {
     if (!settings || !service) return {}
     const hours = settings.hours?.[weekday(date)]
     const out = {}
-    for (const b of barbers) {
+    for (const b of able) {
       if (b.daysOff?.includes(weekday(date))) { out[b.id] = []; continue }
       out[b.id] = freeSlots({
         date, hours, duration: totalDuration(service.list, b), step: Number(settings.slotStep || 30), breakTime: settings.breakTime,
@@ -105,7 +108,7 @@ export default function Booking() {
       })
     }
     return out
-  }, [settings, service, barbers, busy, date])
+  }, [settings, service, able, busy, date])
 
   const slots = useMemo(() => {
     if (barberId !== 'any') return slotsByBarber[barberId] || []
@@ -130,10 +133,10 @@ export default function Booking() {
     if (!time) return null
     if (barberId !== 'any') return barbers.find((b) => b.id === barberId)
     // "sem preferência": escolhe quem está livre e com menos atendimentos no dia
-    const free = barbers.filter((b) => slotsByBarber[b.id]?.includes(time))
+    const free = able.filter((b) => slotsByBarber[b.id]?.includes(time))
     free.sort((a, b) => busy.filter((x) => x.barberId === a.id).length - busy.filter((x) => x.barberId === b.id).length)
     return free[0] || null
-  }, [time, barberId, barbers, slotsByBarber, busy])
+  }, [time, barberId, able, barbers, slotsByBarber, busy])
 
   const goToTime = () => { if (!service) return; setTime(null); setAutoDay(true); setDate(today()); setStep(2); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   const pickTime = (t) => { setTime(t); setStep(3); window.scrollTo({ top: 0, behavior: 'smooth' }) }
@@ -335,7 +338,7 @@ export default function Booking() {
                     <span className="avatar any"><Sparkles size={18} /></span>
                     <b>Qualquer um</b><small>1º disponível</small>
                   </button>
-                  {barbers.map((b) => (
+                  {able.map((b) => (
                     <button key={b.id} role="radio" aria-checked={barberId === b.id} className={cls('barber-chip', barberId === b.id && 'on')} onClick={() => setBarberId(b.id)}>
                       <Avatar name={b.name} color={b.color} size={44} />
                       <b>{b.name.split(' ')[0]}</b><small>{b.bio || 'Profissional'}</small>
