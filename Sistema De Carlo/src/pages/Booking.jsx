@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { ArrowRight, CalendarDays, Camera, Check, ChevronLeft, Clock, Crown, Gift, Hourglass, Lock, MapPin, Megaphone, MessageCircle, RotateCcw, Sparkles, Star, User } from 'lucide-react'
+import { ArrowRight, CalendarDays, Camera, Check, ChevronLeft, Clock, Crown, Gift, Hourglass, Lock, MapPin, Megaphone, MessageCircle, RotateCcw, Sparkles, Star, Search, User } from 'lucide-react'
 import { useStore } from '../state/Store'
 import { Avatar, Button, Field, Logo, Price, RuneRule, ThemeToggle } from '../components/ui'
 import { BRAND } from '../config/brand'
@@ -21,6 +21,8 @@ export default function Booking() {
   const [step, setStep] = useState(1)
   const [picked, setPicked] = useState([])
   const [barberId, setBarberId] = useState('any')
+  const [sq, setSq] = useState('')
+  const [cat, setCat] = useState('')
   const [date, setDate] = useState(today())
   const [time, setTime] = useState(null)
   const [busy, setBusy] = useState([])
@@ -282,8 +284,15 @@ export default function Booking() {
                 )}
                 <h2 className="bk-title">Escolha os serviços</h2>
                 <p className="bk-sub">Toque em um ou mais. Ex.: limpeza de pele + design de sobrancelhas.</p>
+                {(() => { const cats = [...new Set(services.map((s) => (s.description || '').split(' · ')[0]).filter((c) => c && c.length <= 24))]; return cats.length > 1 && (
+                  <div className="svc-cats">
+                    <button className={cls('pill', !cat && 'on')} onClick={() => setCat('')}>Todos</button>
+                    {cats.map((c) => <button key={c} className={cls('pill', cat === c && 'on')} onClick={() => setCat(cat === c ? '' : c)}>{c}</button>)}
+                  </div>
+                ) })()}
+                <div className="search svc-search"><Search size={16} /><input value={sq} onChange={(e) => setSq(e.target.value)} placeholder="Buscar procedimento" aria-label="Buscar procedimento" /></div>
                 <div className="svc-list" role="group" aria-label="Serviços">
-                  {services.map((s) => {
+                  {services.filter((s) => (!cat || (s.description || '').startsWith(cat)) && (!sq.trim() || `${s.name} ${s.description || ''}`.toLowerCase().includes(sq.trim().toLowerCase())) || picked.includes(s.id)).map((s) => {
                     const on = picked.includes(s.id)
                     return (
                       <button key={s.id} className={cls('svc', on && 'on')} aria-pressed={on} onClick={() => togglePick(s.id)}>

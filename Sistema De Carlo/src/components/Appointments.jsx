@@ -102,7 +102,10 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
   const chosen = f.serviceIds.map((id) => data.services.find((s) => s.id === id)).filter(Boolean)
   const barber = data.barbers.find((b) => b.id === f.barberId)
   const service = chosen.length ? { duration: totalDuration(chosen, barber), price: chosen.reduce((a, x) => a + Number(x.price), 0) } : null
+  const [sq, setSq] = useState('')
   const offered = data.services.filter((s) => s.active && doesService(barber, s.id))
+  // serviço marcado que a profissional não faz some da seleção (antes travava o botão Agendar sem aviso)
+  useEffect(() => { if (barber && f.serviceIds.some((id) => !doesService(barber, id))) setF((x) => ({ ...x, serviceIds: x.serviceIds.filter((id) => doesService(barber, id)), time: '' })) }, [barber, f.serviceIds])
   const toggleSvc = (id) => setF({ ...f, time: '', serviceIds: f.serviceIds.includes(id) ? f.serviceIds.filter((x) => x !== id) : [...f.serviceIds, id] })
   const slots = useMemo(() => {
     if (!service || !barber) return []
@@ -141,7 +144,8 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
         <Field label="Nome" required hint={match && !edit ? `Cliente encontrado: ${match.name}` : ''}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={match?.name || 'Nome do cliente'} /></Field>
         <Field label={`Serviços${service ? ` · ${money(service.price)} · ${service.duration} min` : ''}`} required className="span-2">
           <div className="days">
-            {offered.map((s) => (
+            {offered.length > 12 && <div className="search svc-search"><Search size={16} /><input value={sq} onChange={(e) => setSq(e.target.value)} placeholder="Buscar procedimento" /></div>}
+            {offered.filter((s) => !sq.trim() || f.serviceIds.includes(s.id) || s.name.toLowerCase().includes(sq.trim().toLowerCase())).map((s) => (
               <button key={s.id} type="button" className={`pill ${f.serviceIds.includes(s.id) ? 'on' : ''}`} onClick={() => toggleSvc(s.id)}>{s.name}</button>
             ))}
           </div>

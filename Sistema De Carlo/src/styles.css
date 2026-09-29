@@ -1628,3 +1628,6 @@ body { background-image: radial-gradient(120% 70% at 50% -10%, rgba(227, 165, 15
 .search input { flex: 1; min-width: 0; }
 .sale-row.clickable { cursor: pointer; }
 .sale-row.clickable:hover { background: var(--bg-2); }
+.svc-cats { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; scrollbar-width: thin; }
+.svc-cats .pill { white-space: nowrap; flex-shrink: 0; }
+.svc-search { margin-bottom: 12px; width: 100%; }
