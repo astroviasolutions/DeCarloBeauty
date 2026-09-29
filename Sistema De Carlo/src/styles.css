@@ -236,7 +236,7 @@ input:disabled { opacity: .5; }
 
 /* ---------- Modal ---------- */
 .modal-bg { position: fixed; inset: 0; background: rgba(0, 0, 0, .7); backdrop-filter: blur(4px); z-index: 50; display: grid; place-items: center; padding: 16px; animation: fade .15s; }
-.modal { width: 100%; max-width: 520px; max-height: calc(100dvh - 32px); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line-2); border-radius: 18px; box-shadow: 0 30px 80px rgba(0, 0, 0, .7); animation: pop .18s ease-out; }
+.modal { width: 100%; max-width: 520px; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line-2); border-radius: 18px; box-shadow: 0 30px 80px rgba(0, 0, 0, .7); animation: pop .18s ease-out; }
 .modal-wide { max-width: 1100px; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--line); }
 .modal-head h3 { font-family: var(--f-cond); font-size: 22px; letter-spacing: .04em; text-transform: uppercase; }
@@ -256,7 +256,7 @@ input:disabled { opacity: .5; }
 /* =====================================================================
    AGENDAMENTO (cliente)
    ===================================================================== */
-.booking { min-height: 100dvh; display: flex; flex-direction: column; }
+.booking { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
 .hero { position: relative; }
 .hero-art { position: relative; aspect-ratio: 16 / 10; background-size: cover; background-position: center 18%; display: flex; align-items: flex-end; justify-content: center; }
 .hero-art::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(13, 12, 12, .15) 0%, rgba(13, 12, 12, .2) 45%, rgba(13, 12, 12, .92) 88%, var(--hero-end) 100%); }
@@ -338,12 +338,12 @@ input:disabled { opacity: .5; }
 .bk-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 18px max(16px, calc((100% - 1200px) / 2 + 16px)) 26px; color: var(--dim); font-size: 13px; border-top: 1px solid var(--line); }
 .bk-foot a { display: inline-flex; align-items: center; gap: 5px; }
 .bk-foot a:hover { color: var(--text); }
-.center-screen { min-height: 100dvh; display: grid; place-items: center; color: var(--muted); }
+.center-screen { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; color: var(--muted); }
 
 /* =====================================================================
    LOGIN
    ===================================================================== */
-.login { min-height: 100dvh; display: grid; place-items: center; padding: 20px 16px; background-size: cover; background-position: center 20%; }
+.login { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 20px 16px; background-size: cover; background-position: center 20%; }
 .login-card { width: 100%; max-width: 380px; }
 .login-brand { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; margin: 8px 0 22px; }
 .login-brand h1 { font-size: 38px; margin-top: 8px; }
@@ -360,8 +360,8 @@ input:disabled { opacity: .5; }
 /* =====================================================================
    PAINEL DA EQUIPE
    ===================================================================== */
-.staff { display: flex; min-height: 100dvh; }
-.side { width: 240px; flex: none; position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; background: var(--side-bg); border-right: 1px solid var(--line); padding: 18px 12px; }
+.staff { display: flex; min-height: 100vh; min-height: 100dvh; }
+.side { width: 240px; flex: none; position: sticky; top: 0; height: 100vh; height: 100dvh; display: flex; flex-direction: column; background: var(--side-bg); border-right: 1px solid var(--line); padding: 18px 12px; }
 .side-brand { padding: 4px 8px 20px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
 .side-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; }
 .side-link { display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 12px; border-radius: var(--r); color: var(--muted); font-family: var(--f-cond); font-weight: 600; font-size: 16.5px; letter-spacing: .06em; text-transform: uppercase; width: 100%; position: relative; }
@@ -436,7 +436,7 @@ input:disabled { opacity: .5; }
 /* agenda (calendário) */
 .head-actions .date-nav { display: flex; align-items: center; gap: 4px; }
 .date-nav input { width: 160px; height: 40px; }
-.cal { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: auto; max-height: calc(100dvh - 200px); }
+.cal { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: auto; max-height: calc(100vh - 200px); max-height: calc(100dvh - 200px); }
 .cal-head, .cal-body { display: grid; min-width: fit-content; }
 .cal-head { position: sticky; top: 0; z-index: 4; background: var(--surface-2); border-bottom: 1px solid var(--line-2); }
 .cal-barber { display: flex; align-items: center; gap: 10px; padding: 12px; border-left: 1px solid var(--line); }
@@ -1029,7 +1029,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--brass); box-shad
 .stars svg.on { color: var(--brass); fill: var(--brass); }
 
 /* Portal do cliente / Avaliação */
-.portal { max-width: 620px; margin: 0 auto; padding: 18px 16px 50px; min-height: 100dvh; }
+.portal { max-width: 620px; margin: 0 auto; padding: 18px 16px 50px; min-height: 100vh; min-height: 100dvh; }
 .portal-top { display: flex; justify-content: space-between; align-items: center; }
 .portal-brand { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 14px 0 18px; text-align: center; }
 .portal-find { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 8px; }
@@ -1190,7 +1190,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--brass); box-shad
 .tv-ticker-track span { font-family: var(--f-title); font-size: 18px; letter-spacing: .06em; color: #e3d6c4; }
 .tv-ticker-track span::before { content: 'ᛟ'; font-family: var(--f-rune); color: var(--red); margin-right: 14px; }
 @keyframes tv-scroll { to { transform: translateX(-50%); } }
-@media (max-width: 900px) { .tv { position: static; min-height: 100dvh; padding: 16px 16px 0; overflow: auto; } .tv-main { grid-template-columns: 1fr; } .tv-board { grid-template-columns: 1fr !important; } .tv-ticker { margin: 0 -16px; } .tv-head { flex-wrap: wrap; } .tv-tools { position: static !important; opacity: 1; } }
+@media (max-width: 900px) { .tv { position: static; min-height: 100vh; min-height: 100dvh; padding: 16px 16px 0; overflow: auto; } .tv-main { grid-template-columns: 1fr; } .tv-board { grid-template-columns: 1fr !important; } .tv-ticker { margin: 0 -16px; } .tv-head { flex-wrap: wrap; } .tv-tools { position: static !important; opacity: 1; } }
 
 .tv-main { grid-template-columns: minmax(0, 1fr) 280px; }
 .tv-board > * { min-width: 0; }
@@ -1641,3 +1641,15 @@ body { background-image: radial-gradient(120% 70% at 50% -10%, rgba(227, 165, 15
 .confirm-list { list-style: none; padding: 0; margin: 12px 0 16px; display: flex; flex-direction: column; gap: 8px; }
 .confirm-list li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
 @media (max-width: 480px) { .split-row { grid-template-columns: minmax(0, 1fr) 96px 72px; } }
+
+/* Navegador do Instagram/Facebook e celulares pequenos */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+@media (max-width: 600px) { html, body { max-width: 100%; overflow-x: hidden; } }
+@media (max-width: 380px) {
+  .stepper li { font-size: 11px; letter-spacing: .02em; gap: 5px; }
+  .stepper li span { width: 20px; height: 20px; font-size: 11px; flex: none; }
+  .svc { padding: 12px; gap: 10px; }
+  .svc-row { min-width: 0; flex-wrap: wrap; }
+  .svc-price { flex-shrink: 0; }
+}
+@media (max-width: 600px) { .hero-art { aspect-ratio: auto; min-height: 0 !important; height: auto; } .hero-title { padding-top: 76px; padding-bottom: 28px; } }
