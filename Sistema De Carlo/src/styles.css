@@ -1657,3 +1657,22 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .search { flex-shrink: 0; min-height: 42px; }
 .field .search, .modal .search { width: 100%; }
 @media (max-width: 340px) { .btn-glass { justify-content: center; gap: 0; } .btn-glass svg { flex: none; width: 18px; height: 18px; display: block; } }
+/* Botões nunca passam da tela: quebram linha em vez de vazar */
+.btn { min-width: 0; max-width: 100%; }
+.appt-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.appt-actions > * { min-width: 0; }
+@media (max-width: 600px) {
+  .btn { white-space: normal; height: auto; min-height: 46px; padding-top: 10px; padding-bottom: 10px; line-height: 1.25; text-align: center; letter-spacing: .1em; }
+  .btn svg { flex: none; }
+}
+.seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.range { min-width: 0; max-width: 100%; }
+@media (max-width: 600px) { .range input, .agenda-bar .range input { min-width: 0; flex: 1 1 0; width: auto; } .hour-row { flex-wrap: wrap; } }
+@media (max-width: 600px) {
+  .pdv { grid-template-columns: minmax(0, 1fr); }
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tile { min-width: 0; }
+  .pdv-tools .search { flex: 1 1 100%; min-width: 0; }
+  .line { min-width: 0; flex-wrap: wrap; }
+  .line > * { min-width: 0; }
+}
