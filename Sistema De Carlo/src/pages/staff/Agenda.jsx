@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { CalendarOff, ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react'
 import { useStore } from '../../state/Store'
 import { Avatar, Badge, Button, Card, Empty, Segmented, Stat, StatusBadge } from '../../components/ui'
-import { BlockModal, WaitlistPanel } from '../../components/Team'
+import { BlockModal, BlocksList, WaitlistPanel } from '../../components/Team'
+import { WaitlistModal } from '../../components/Loyalty'
 import { AppointmentModal, ApptRow, NewAppointmentModal, serviceNames } from '../../components/Appointments'
 import {
   addDays, cls, endOfMonth, fmtDate, fmtDateLong, money, MONTHS, nowMin, parseDate, relDay, startOfMonth, startOfWeek, STATUS, sum, today, toHHMM, toMin, WD_SHORT, weekday,
@@ -28,6 +29,7 @@ export default function Agenda({ onlyBarberId }) {
   const [blockOpen, setBlockOpen] = useState(false)
   const [editBlock, setEditBlock] = useState(null)
   const [q, setQ] = useState('')
+  const [waitOpen, setWaitOpen] = useState(false)
 
   const barbers = data.barbers.filter((b) => b.active && (!onlyBarberId || b.id === onlyBarberId) && (onlyBarberId || who === 'all' || b.id === who))
   const ids = new Set(barbers.map((b) => b.id))
@@ -110,7 +112,9 @@ export default function Agenda({ onlyBarberId }) {
       {view === 'mes' && <MonthView date={date} appts={inSpan} onOpenDay={openDay} onBook={book} />}
       {view === 'periodo' && <PeriodList appts={inSpan} onPick={setSel} />}
 
-      {view === 'dia' && !onlyBarberId && <Card title={`Lista de espera · ${relDay(date)}`} className="mt"><WaitlistPanel date={date} /></Card>}
+      {view === 'dia' && !onlyBarberId && <Card title={`Lista de espera · ${relDay(date)}`} action={<button className="link" onClick={() => setWaitOpen(true)}>+ Colocar cliente</button>} className="mt"><WaitlistPanel date={date} /></Card>}
+      {!onlyBarberId && <Card title="Bloqueios (toque para editar ou excluir)" className="mt"><BlocksList /></Card>}
+      {waitOpen && <WaitlistModal open date={date} barberId={who === 'all' ? 'any' : who} serviceIds={[]} me={{ name: '', phone: '' }} barbers={data.barbers} onClose={() => setWaitOpen(false)} />}
       {sel && <AppointmentModal appt={sel} onClose={() => setSel(null)} />}
       <BlockModal open={blockOpen} onClose={() => setBlockOpen(false)} barberId={onlyBarberId} />
       {editBlock && <BlockModal open edit={editBlock} onClose={() => setEditBlock(null)} barberId={onlyBarberId} />}

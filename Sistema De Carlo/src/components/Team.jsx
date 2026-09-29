@@ -100,17 +100,19 @@ export function BlockModal({ open, onClose, barberId: fixedBarber, edit = null }
 
 export function BlocksList({ barberId }) {
   const { data, actions } = useStore()
+  const [edit, setEdit] = useState(null)
   const list = data.blocks.filter((b) => b.date >= today() && (!barberId || b.barberId === barberId)).sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')))
   if (!list.length) return <p className="muted small">Nenhum bloqueio futuro.</p>
   return (
     <div className="list compact">
       {list.map((b) => (
-        <div key={b.id} className="sale-row">
+        <div key={b.id} className="sale-row clickable" role="button" tabIndex={0} onClick={() => setEdit(b)} title="Editar bloqueio">
           <span className="appt-time">{fmtDate(b.date)}</span>
           <span className="appt-info"><b>{b.reason}</b><small>{relDay(b.date)} · {b.start ? `${b.start}–${b.end}` : 'dia inteiro'}{!barberId ? ` · ${data.barbers.find((x) => x.id === b.barberId)?.name.split(' ')[0]}` : ''}</small></span>
-          <button className="icon-btn sm" onClick={() => actions.remove('blocks', b.id, 'Bloqueio removido')} aria-label="Remover bloqueio"><Trash2 size={15} /></button>
+          <button className="icon-btn sm" onClick={(e) => { e.stopPropagation(); actions.remove('blocks', b.id, 'Bloqueio removido') }} aria-label="Remover bloqueio"><Trash2 size={15} /></button>
         </div>
       ))}
+      {edit && <BlockModal open edit={edit} barberId={barberId} onClose={() => setEdit(null)} />}
     </div>
   )
 }

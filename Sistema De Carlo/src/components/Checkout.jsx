@@ -28,6 +28,8 @@ export default function Checkout({ appointment, presetBarberId, lockBarber, onDo
   const [barberId, setBarberId] = useState(presetBarberId || appointment?.barberId || activeBarbers[0]?.id)
   const [items, setItems] = useState([])
   const [discount, setDiscount] = useState('')
+  const [extra, setExtra] = useState('') // adicional (valor a mais)
+  const [extraNote, setExtraNote] = useState('')
   const [payment, setPayment] = useState('pix')
   const [clientQ, setClientQ] = useState('')
   const [client, setClient] = useState(null)
@@ -58,7 +60,8 @@ export default function Checkout({ appointment, presetBarberId, lockBarber, onDo
   const setQty = (i, d) => setItems((list) => list.map((it, j) => (j === i ? { ...it, qty: Math.max(1, it.qty + d) } : it)))
   const del = (i) => setItems((list) => list.filter((_, j) => j !== i))
 
-  const subtotal = round2(items.reduce((a, x) => a + x.price * x.qty, 0))
+  const extraAmt = Math.max(0, Number(String(extra).replace(',', '.')) || 0)
+  const subtotal = round2(items.reduce((a, x) => a + x.price * x.qty, 0) + extraAmt)
   const svcTotal = round2(items.filter((x) => x.type === 'service').reduce((a, x) => a + x.price * x.qty, 0))
 
   // ---- Benefícios do cliente: Clube, Runas, Aniversário, Promoção ----
@@ -92,7 +95,10 @@ export default function Checkout({ appointment, presetBarberId, lockBarber, onDo
   // Clube e Runas: a casa banca, o barbeiro recebe a comissão cheia
   const commissionBase = Math.min(subtotal, manual + (benefit?.reduces ? benefitAmt : 0))
   const priced = useMemo(() => applyDiscount(priceItems(items, { services, products, barber }), commissionBase), [items, services, products, barber, commissionBase])
-  const commission = round2(priced.reduce((a, x) => a + x.commission, 0))
+  // adicional entra como um item, com a mesma comissão dos serviços da venda
+  const extraRate = (() => { const sv = priced.filter((x) => x.type === 'service'); return sv.length ? sv.reduce((a, x) => a + Number(x.commissionRate || 0), 0) / sv.length : Number(barber?.serviceRate ?? 50) })()
+  const pricedAll = extraAmt > 0 ? [...priced, { type: 'extra', refId: null, name: extraNote.trim() ? `Adicional: ${extraNote.trim()}` : 'Adicional', price: extraAmt, qty: 1, commissionRate: round2(extraRate), commission: round2(extraAmt * extraRate / 100) }] : priced
+  const commission = round2(pricedAll.reduce((a, x) => a + x.commission, 0))
 
   const clientMatches = clientQ.length >= 2
     ? clients.filter((c) => c.name.toLowerCase().includes(clientQ.toLowerCase()) || onlyDigits(c.phone).includes(onlyDigits(clientQ) || '###')).slice(0, 5)
@@ -106,12 +112,12 @@ export default function Checkout({ appointment, presetBarberId, lockBarber, onDo
       if (!c && clientQ.trim() && onlyDigits(newPhone).length >= 10) c = await actions.upsertClient({ name: clientQ.trim(), phone: newPhone })
       const sale = await actions.createSale({
         date: today(), time: toHHMM(nowMin()), barberId: barber.id, clientId: c?.id || null, clientName: c?.name || clientQ.trim() || 'Cliente avulso',
-        appointmentId: appointment?.id || null, items: priced, subtotal, discount: disc, total, payment, commissionTotal: commission,
+        appointmentId: appointment?.id || null, items: pricedAll, subtotal, discount: disc, total, payment, commissionTotal: commission,
         benefit: benefit ? { kind: benefit.kind, label: benefit.label, amount: benefitAmt } : null, loyaltyRedeemed: benefit?.kind === 'runas',
       })
       if (photo) await actions.savePhoto({ barberId: barber.id, clientId: c?.id || null, appointmentId: appointment?.id || null, dataUrl: photo, caption: items.filter((x) => x.type === 'service').map((x) => x.name).join(' + ') })
       setDone({ sale, client: c, phone: c?.phone || newPhone })
-      setItems([]); setDiscount(''); setClient(null); setClientQ(''); setNewPhone(''); setBenefitKind(null); setPhoto(null)
+      setItems([]); setDiscount(''); setExtra(''); setExtraNote(''); setClient(null); setClientQ(''); setNewPhone(''); setBenefitKind(null); setPhoto(null)
     } finally { setSaving(false) }
   }
 
@@ -240,6 +246,8 @@ export default function Checkout({ appointment, presetBarberId, lockBarber, onDo
         <div className="totals">
           <div><span>Subtotal</span><span>{money(subtotal)}</span></div>
           {benefit && <div className="ben-line"><span>{benefit.label}</span><span>-{money(benefitAmt)}</span></div>}
+          <div className="disc"><span>Adicional (R$)</span><input inputMode="decimal" value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="0,00" /></div>
+          {extraAmt > 0 && <div className="disc"><span>Motivo do adicional</span><input value={extraNote} onChange={(e) => setExtraNote(e.target.value)} placeholder="Ex.: cabelo longo, material extra" /></div>}
           <div className="disc"><span>Desconto (R$)</span><input inputMode="decimal" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0,00" /></div>
           <div className="grand"><span>Total</span><b>{money(total)}</b></div>
           <div className="comm"><span>Comissão de {barber?.name.split(' ')[0]}</span><b>{money(commission)}</b></div>

@@ -1615,7 +1615,7 @@ body { background-image: radial-gradient(120% 70% at 50% -10%, rgba(227, 165, 15
 .cal-add { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 .cal-add.compact { flex-direction: row; width: auto; display: contents; }
 .req { color: var(--red); font-weight: 700; }
-.cal-block { cursor: pointer; text-align: left; font: inherit; pointer-events: auto; z-index: 3; }
+.cal-block { cursor: pointer; text-align: left; font: inherit; pointer-events: auto; z-index: 1; }
 .cal-block:hover { filter: brightness(1.08); }
 .cal-lunch { position: absolute; left: 0; right: 0; z-index: 1; pointer-events: none; background: repeating-linear-gradient(135deg, transparent 0 6px, var(--hatch) 6px 12px); border-top: 1px dashed var(--line); display: flex; align-items: flex-start; justify-content: flex-end; padding: 2px 6px; }
 .cal-lunch small { font-size: 10.5px; color: var(--dim); }
@@ -1626,3 +1626,5 @@ body { background-image: radial-gradient(120% 70% at 50% -10%, rgba(227, 165, 15
 .search-hit { display: flex; flex-direction: column; gap: 2px; }
 .agenda-bar .search { flex: 1 1 220px; min-width: 0; }
 .search input { flex: 1; min-width: 0; }
+.sale-row.clickable { cursor: pointer; }
+.sale-row.clickable:hover { background: var(--bg-2); }
