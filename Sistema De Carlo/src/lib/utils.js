@@ -118,3 +118,6 @@ export const PAYMENTS = {
   debito: 'Débito',
   credito: 'Crédito',
 }
+
+/** Cobrança: a gestão sempre pode; profissional só se liberada em Ajustes → Privacidade */
+export const canCharge = (settings, session) => session?.role === 'admin' || (settings?.privacy?.billingAllowed || []).includes(session?.barberId)

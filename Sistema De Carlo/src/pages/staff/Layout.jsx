@@ -5,7 +5,7 @@ import {
 import Notifier, { pendingAnnouncements } from '../../components/Notifier'
 import { useStore } from '../../state/Store'
 import { Avatar, Logo, ThemeToggle } from '../../components/ui'
-import { cls } from '../../lib/utils'
+import { cls, canCharge } from '../../lib/utils'
 
 const ADMIN_NAV = [
   { to: '/painel/inicio', label: 'Início', icon: House },
@@ -42,12 +42,13 @@ export default function StaffLayout() {
   const { session, data, actions, isDemo } = useStore()
   const loc = useLocation()
   if (!session) return <Navigate to="/painel" replace />
-  const nav = session.role === 'admin' ? ADMIN_NAV : BARBER_NAV
+  const barberNav = BARBER_NAV.filter((n) => n.to !== '/painel/caixa' || canCharge(data?.settings, session))
+  const nav = session.role === 'admin' ? ADMIN_NAV : barberNav
   const barber = data?.barbers?.find((b) => b.id === session.barberId)
   const unread = pendingAnnouncements(data, session).length
   const mobile = session.role === 'admin'
     ? [...ADMIN_NAV.filter((n) => MOBILE_ADMIN.includes(n.to)), { to: '/painel/mais', label: 'Mais', icon: Settings }]
-    : BARBER_NAV
+    : barberNav
 
   return (
     <div className="staff">

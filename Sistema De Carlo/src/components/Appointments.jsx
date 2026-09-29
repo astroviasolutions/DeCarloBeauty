@@ -5,7 +5,7 @@ import { Avatar, Button, Field, Modal, StatusBadge } from './ui'
 import Checkout from './Checkout'
 import { anamneseAlerts, ClientModal } from '../pages/staff/Cadastros'
 import { PortfolioModal } from './Loyalty'
-import { cls, fmtDateLong, fmtPhone, freeSlots, maskPhone, money, onlyDigits, relDay, today, toHHMM, toMin, waLink, weekday } from '../lib/utils'
+import { canCharge as canChargeFn, cls, fmtDateLong, fmtPhone, freeSlots, maskPhone, money, onlyDigits, relDay, today, toHHMM, toMin, waLink, weekday } from '../lib/utils'
 import { msg as fillMsg } from '../lib/messages'
 import { db } from '../data'
 import { doesService, totalDuration } from '../lib/commission'
@@ -84,7 +84,7 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
           {open && <Button variant="ghost" icon={BellRing} disabled={pinging} onClick={ping}>{pinging ? 'Enviando…' : 'Notificar no celular'}</Button>}
           {open && <Button variant="ghost" icon={Pencil} onClick={() => setEditing(true)}>Editar</Button>}
           {open && appt.status === 'agendado' && <Button variant="ghost" icon={Check} onClick={() => set('confirmado', 'Confirmado')}>Confirmar</Button>}
-          {open && canCharge && <Button icon={CircleCheck} onClick={() => setCharging(true)}>Concluir e cobrar</Button>}
+          {open && canCharge && canChargeFn(data.settings, session) && <Button icon={CircleCheck} onClick={() => setCharging(true)}>Concluir e cobrar</Button>}
           {open && <Button variant="ghost" icon={UserX} onClick={() => set('faltou', 'Marcado como falta')}>Faltou</Button>}
           {open && <Button variant="danger" icon={Ban} onClick={() => set('cancelado', 'Agendamento cancelado')}>Cancelar</Button>}
         </div>

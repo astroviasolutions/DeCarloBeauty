@@ -4,9 +4,15 @@ import { useStore } from '../../state/Store'
 import { Button, Card, Empty, Field, Modal } from '../../components/ui'
 import Checkout from '../../components/Checkout'
 import { AppointmentModal, ApptRow } from '../../components/Appointments'
-import { money, PAYMENTS, sum, today } from '../../lib/utils'
+import { money, PAYMENTS, sum, today, canCharge } from '../../lib/utils'
 
 export default function Caixa() {
+  const { data, session } = useStore()
+  if (!canCharge(data?.settings, session)) return <div className="empty"><strong>Cobrança liberada só para a gestão</strong><p>Se precisar, a dona pode liberar em Ajustes → Privacidade.</p></div>
+  return <CaixaInner />
+}
+
+function CaixaInner() {
   const { data, session, actions } = useStore()
   const isAdmin = session.role === 'admin'
   const [sel, setSel] = useState(null)

@@ -315,6 +315,7 @@ declare v_id text; it jsonb;
 begin
   if not is_staff() then raise exception 'Sem permissão'; end if;
   if not is_admin() and (p_sale->>'barber_id') is distinct from my_barber_id() then raise exception 'Você só pode lançar vendas suas'; end if;
+  if not is_admin() and not coalesce((select (privacy->'billingAllowed') ? my_barber_id() from settings where id = 'main'), false) then raise exception 'Cobrança liberada só para a gestão'; end if;
   insert into sales(date, time, barber_id, client_id, client_name, appointment_id, items, subtotal, discount, total, payment, commission_total, benefit, loyalty_redeemed)
   values (coalesce((p_sale->>'date')::date, current_date), coalesce((p_sale->>'time')::time, localtime), p_sale->>'barber_id',
           nullif(p_sale->>'client_id',''), coalesce(p_sale->>'client_name','Cliente avulso'), nullif(p_sale->>'appointment_id',''),
