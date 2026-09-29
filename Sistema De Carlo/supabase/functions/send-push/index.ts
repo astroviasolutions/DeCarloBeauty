@@ -130,6 +130,36 @@ Deno.serve(async (req) => {
       return json({ client: c.sent, pro: p.sent })
     }
 
+    // ---------- Gestão cria/atualiza o login de uma profissional (Equipe → Acesso) ----------
+    if (type === 'create_staff') {
+      const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
+      const { data: { user } } = await db.auth.getUser(jwt)
+      if (!user) return json({ error: 'faça login no painel' }, 401)
+      const { data: me } = await db.from('staff').select('role').eq('user_id', user.id).maybeSingle()
+      if (me?.role !== 'admin') return json({ error: 'Somente a gestão pode criar acessos' }, 403)
+      const email = String(body.email || '').trim().toLowerCase(); const password = String(body.password || ''); const bid = String(body.barber_id || '')
+      if (!email.includes('@') || password.length < 6) return json({ error: 'Informe o e-mail e uma senha com 6 ou mais caracteres' }, 400)
+      const { data: b } = await db.from('barbers').select('id,name').eq('id', bid).maybeSingle()
+      if (!b) return json({ error: 'Profissional não encontrada' }, 404)
+      let uid = ''
+      const { data: created } = await db.auth.admin.createUser({ email, password, email_confirm: true })
+      if (created?.user) uid = created.user.id
+      else {
+        const { data: list } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 })
+        const u = list?.users?.find((x) => (x.email || '').toLowerCase() === email)
+        if (!u) return json({ error: 'Não foi possível criar esse e-mail' }, 400)
+        const { data: row } = await db.from('staff').select('role').eq('user_id', u.id).maybeSingle()
+        if (row?.role === 'admin') return json({ error: 'Esse e-mail é da gestão' }, 400)
+        await db.auth.admin.updateUserById(u.id, { password, email_confirm: true })
+        uid = u.id
+      }
+      await db.from('staff').delete().eq('barber_id', b.id).neq('user_id', uid)
+      const { error: e2 } = await db.from('staff').upsert({ user_id: uid, role: 'barber', name: b.name, barber_id: b.id, email }, { onConflict: 'user_id' })
+      if (e2) return json({ error: e2.message }, 400)
+      await db.from('push_subscriptions').update({ role: 'barber', barber_id: b.id }).eq('user_id', uid)
+      return json({ ok: true, email })
+    }
+
     if (!fromDb) return json({ error: 'não autorizado' }, 401)
     const { data: settings } = await db.from('settings').select('shop_name, notify').eq('id', 'main').maybeSingle()
     const notify = { newBooking: true, cancel: true, reschedule: true, noShow: true, confirm: true, sales: true, reviews: true, waitlist: true, selfToo: false, ...(settings?.notify || {}) }

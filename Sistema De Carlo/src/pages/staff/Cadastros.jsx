@@ -300,7 +300,7 @@ export function Equipe() {
   const blank = { name: '', phone: '', pin: '', goal: 6000, color: COLORS[data.barbers.length % COLORS.length], serviceRate: null, productRate: null, daysOff: [0], active: true, bio: '', serviceOverrides: {}, serviceIds: [] }
   const linked = (id) => data.staff?.find((x) => x.barberId === id)?.email || ''
   const save = async () => {
-    const { accessEmail: _ae, ...clean } = edit
+    const { accessEmail: _ae, accessPass: _ap, accessSent: _as, ...clean } = edit
     const r = { ...clean, serviceOverrides: cleanOverrides(edit.serviceOverrides), goal: Number(edit.goal || 0), serviceRate: edit.serviceRate === '' || edit.serviceRate == null ? null : Number(edit.serviceRate), productRate: edit.productRate === '' || edit.productRate == null ? null : Number(edit.productRate), phone: onlyDigits(edit.phone) }
     if (!isDemo) delete r.pin
     await actions.upsert('barbers', r); setEdit(null)
@@ -354,10 +354,22 @@ export function Equipe() {
               </div>
             </Field>
             {isDemo ? <Field label="PIN de acesso (4 dígitos)"><input inputMode="numeric" maxLength={4} value={edit.pin} onChange={(e) => setEdit({ ...edit, pin: onlyDigits(e.target.value).slice(0, 4) })} /></Field>
-              : <Field label="E-mail de acesso" hint={linked(edit.id) ? `Vinculado: ${linked(edit.id)}` : 'Crie o usuário em Supabase → Authentication e vincule aqui'}>
-                  <div className="range"><input type="email" value={edit.accessEmail ?? ''} onChange={(e) => setEdit({ ...edit, accessEmail: e.target.value })} placeholder={linked(edit.id) || 'email@da.profissional'} />
-                    <Button variant="ghost" size="sm" disabled={!edit.id || !edit.accessEmail?.includes('@')} onClick={() => actions.linkStaff(edit.accessEmail, edit.id)}>Vincular</Button></div>
-                </Field>}
+              : <div className="span-2 ov-box">
+                  <h4 className="sub-title">Acesso da profissional {linked(edit.id) ? <small className="muted">· ativo: {linked(edit.id)}</small> : ''}</h4>
+                  {!edit.id ? <p className="muted small">Salve a profissional primeiro. Depois abra de novo para criar o acesso.</p> : (
+                    <>
+                      <p className="muted small">Digite o e-mail dela e uma senha. O sistema cria o login e já liga a esta profissional. Se o e-mail já existir, a senha é trocada.</p>
+                      <div className="form-grid">
+                        <Field label="E-mail" required><input type="email" value={edit.accessEmail ?? linked(edit.id)} onChange={(e) => setEdit({ ...edit, accessEmail: e.target.value })} placeholder="email@da.profissional" /></Field>
+                        <Field label="Senha" required hint="Mínimo 6 caracteres"><input value={edit.accessPass ?? ''} onChange={(e) => setEdit({ ...edit, accessPass: e.target.value })} placeholder="Ex.: decarlo2026" /></Field>
+                      </div>
+                      <div className="range">
+                        <Button size="sm" disabled={!(edit.accessEmail ?? linked(edit.id))?.includes('@') || (edit.accessPass || '').length < 6} onClick={async () => { const email = (edit.accessEmail ?? linked(edit.id)).trim(); await actions.createStaffLogin(email, edit.accessPass, edit.id); setEdit({ ...edit, accessEmail: email, accessSent: { email, pass: edit.accessPass } }) }}>{linked(edit.id) ? 'Atualizar acesso' : 'Criar acesso'}</Button>
+                        {edit.accessSent && onlyDigits(edit.phone).length >= 10 && <a className="btn btn-wa btn-sm" target="_blank" rel="noreferrer" href={waLink(edit.phone, `Olá, ${edit.name.split(' ')[0]}! Seu acesso ao sistema da ${data.settings.shopName || 'De Carlo Beauty'}:\n🔗 ${location.origin}${location.pathname}#/painel\n📧 ${edit.accessSent.email}\n🔑 ${edit.accessSent.pass}\nEntre em "Área da equipe" e ative as notificações. 🦋`)}>Enviar acesso no WhatsApp</a>}
+                      </div>
+                    </>
+                  )}
+                </div>}
             <Field label="Meta de faturamento no mês (R$)" className="span-2" hint="Usada nos Destaques do mês"><input inputMode="numeric" value={edit.goal ?? ''} onChange={(e) => setEdit({ ...edit, goal: onlyDigits(e.target.value) })} /></Field>
             <Field label="Especialidade" className="span-2"><input value={edit.bio} onChange={(e) => setEdit({ ...edit, bio: e.target.value })} placeholder="Ex.: Degradê e navalha" /></Field>
             <Field label="Comissão serviços (%)" hint="Vazio = usa o % de cada serviço"><input inputMode="numeric" value={edit.serviceRate} onChange={(e) => setEdit({ ...edit, serviceRate: e.target.value })} placeholder="padrão" /></Field>

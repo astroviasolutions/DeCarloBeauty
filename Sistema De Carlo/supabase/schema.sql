@@ -843,3 +843,37 @@ begin
 exception when others then raise warning 'push_client_reminders: %', sqlerrm;
 end $$;
 revoke execute on function push_client_reminders() from public, anon, authenticated;
+
+
+-- =====================================================================
+-- CONFIRMAÇÃO PELA CLIENTE (link enviado pelo WhatsApp)
+-- Confirma todos os horários da cliente naquele dia. A confirmação avisa
+-- a profissional e a gestão (notificação "Horário confirmado").
+-- =====================================================================
+alter table appointments add column if not exists confirm_token text not null default encode(gen_random_bytes(6), 'hex');
+
+create or replace function confirm_info(p_id text, p_token text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare a appointments;
+begin
+  select * into a from appointments where id = p_id and confirm_token = p_token;
+  if not found then return null; end if;
+  return jsonb_build_object('client', a.client_name, 'date', a.date, 'items', coalesce((
+    select jsonb_agg(jsonb_build_object('time', to_char(x.time, 'HH24:MI'), 'status', x.status,
+      'barber', split_part((select name from barbers b where b.id = x.barber_id), ' ', 1),
+      'services', (select string_agg(s.name, ' + ') from services s where s.id = any(x.service_ids))) order by x.time)
+    from appointments x where x.date = a.date and x.client_phone = a.client_phone and x.status in ('agendado', 'confirmado')), '[]'));
+end $$;
+grant execute on function confirm_info(text, text) to anon, authenticated;
+
+create or replace function client_confirm(p_id text, p_token text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare a appointments;
+begin
+  select * into a from appointments where id = p_id and confirm_token = p_token;
+  if not found then raise exception 'Link inválido'; end if;
+  if a.date < current_date then raise exception 'Este horário já passou'; end if;
+  update appointments set status = 'confirmado' where date = a.date and client_phone = a.client_phone and status = 'agendado';
+  return confirm_info(p_id, p_token);
+end $$;
+grant execute on function client_confirm(text, text) to anon, authenticated;

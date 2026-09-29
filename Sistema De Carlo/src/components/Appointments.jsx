@@ -5,7 +5,7 @@ import { Avatar, Button, Field, Modal, StatusBadge } from './ui'
 import Checkout from './Checkout'
 import { anamneseAlerts, ClientModal } from '../pages/staff/Cadastros'
 import { PortfolioModal } from './Loyalty'
-import { fmtDateLong, fmtPhone, freeSlots, maskPhone, money, onlyDigits, relDay, today, toMin, waLink, weekday } from '../lib/utils'
+import { cls, fmtDateLong, fmtPhone, freeSlots, maskPhone, money, onlyDigits, relDay, today, toHHMM, toMin, waLink, weekday } from '../lib/utils'
 import { msg as fillMsg } from '../lib/messages'
 import { db } from '../data'
 import { doesService, totalDuration } from '../lib/commission'
@@ -35,6 +35,10 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
   const svc = serviceNames(appt, data.services)
   const open = !['concluido', 'cancelado', 'faltou'].includes(appt.status)
   const set = async (status, msg) => { await actions.updateAppointment(appt.id, { status }, msg); onClose() }
+  // todos os horários da cliente no mesmo dia vão juntos na mensagem
+  const sameDay = data.appointments.filter((a) => a.date === appt.date && ['agendado', 'confirmado'].includes(a.status) && (a.clientId ? a.clientId === appt.clientId : a.clientName === appt.clientName)).sort((a, b) => a.time.localeCompare(b.time))
+  const lines = (sameDay.length ? sameDay : [appt]).map((a) => `• ${a.time} ${serviceNames(a, data.services)} com ${data.barbers.find((b) => b.id === a.barberId)?.name.split(' ')[0] || ''}`).join('\n')
+  const askMsg = fillMsg(data.settings, 'askConfirm', { nome: appt.clientName.split(' ')[0], servicos: lines, data: relDay(appt.date).toLowerCase() + ' · ' + fmtDateLong(appt.date), link: `${location.origin}${location.pathname}#/confirmar/${appt.id}?t=${appt.confirmToken || ''}` })
   const reminder = fillMsg(data.settings, 'reminder', { nome: appt.clientName.split(' ')[0], servico: svc, data: relDay(appt.date).toLowerCase(), hora: appt.time, profissional: barber?.name })
   const client = data.clients.find((c) => c.id === appt.clientId)
   const alerts = anamneseAlerts(client?.anamnese)
@@ -67,6 +71,7 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
           <div><Clock size={18} /><span>Duração</span><b>{appt.duration} min</b></div>
           <div><UserRound size={18} /><span>{barber?.name}</span><b>{appt.source === 'online' ? 'App' : 'Balcão'}</b></div>
         </div>
+        {appt.notes && <p className="appt-notes"><b>Observações:</b> {appt.notes}</p>}
         {client && (
           <div className="appt-links">
             <Button variant="ghost" size="sm" icon={ClipboardList} onClick={() => setFicha(true)}>Ficha da cliente</Button>
@@ -74,6 +79,7 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
           </div>
         )}
         <div className="appt-actions">
+          {hasPhone && open && appt.confirmToken && <a className="btn btn-wa" href={waLink(appt.clientPhone, askMsg)} target="_blank" rel="noreferrer"><Check size={18} /> Pedir confirmação{sameDay.length > 1 ? ` (${sameDay.length} horários)` : ''}</a>}
           {hasPhone && <a className="btn btn-wa" href={waLink(appt.clientPhone, reminder)} target="_blank" rel="noreferrer"><MessageCircle size={18} /> Lembrar no WhatsApp</a>}
           {open && <Button variant="ghost" icon={BellRing} disabled={pinging} onClick={ping}>{pinging ? 'Enviando…' : 'Notificar no celular'}</Button>}
           {open && <Button variant="ghost" icon={Pencil} onClick={() => setEditing(true)}>Editar</Button>}
@@ -99,13 +105,23 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
   useEffect(() => { if (open && !edit) setF((x) => ({ ...x, date: initialDate || x.date, time: initialTime || '', barberId: initialBarber || x.barberId || data.barbers.find((b) => b.active)?.id, serviceIds: x.serviceIds.length ? x.serviceIds : [data.services.find((s) => s.active)?.id].filter(Boolean) })) }, [open, initialDate, initialTime, initialBarber]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (open && f.date) actions.busy(f.date).then(setBusy) }, [open, f.date, actions])
 
-  const chosen = f.serviceIds.map((id) => data.services.find((s) => s.id === id)).filter(Boolean)
+  const isAdmin = !lockBarber
+  const [assign, setAssign] = useState({}) // serviço → profissional (dividir o atendimento)
+  const [prices, setPrices] = useState({}) // serviço → valor cobrado (editável pela gestão)
+  const [gTimes, setGTimes] = useState({}) // horário das outras profissionais
+  const bOf = (id) => assign[id] || f.barberId
+  const svcOf = (id) => data.services.find((s) => s.id === id)
+  const priceOf = (id) => { const v = prices[id]; return v !== undefined && v !== '' ? Number(String(v).replace(',', '.')) || 0 : Number(svcOf(id)?.price || 0) }
+  const mainIds = f.serviceIds.filter((id) => bOf(id) === f.barberId)
+  const chosen = mainIds.map(svcOf).filter(Boolean)
   const barber = data.barbers.find((b) => b.id === f.barberId)
-  const service = chosen.length ? { duration: totalDuration(chosen, barber), price: chosen.reduce((a, x) => a + Number(x.price), 0) } : null
+  const service = chosen.length ? { duration: totalDuration(chosen, barber), price: mainIds.reduce((a, id) => a + priceOf(id), 0) } : null
+  const others = [...new Set(f.serviceIds.map(bOf).filter((b) => b !== f.barberId))]
   const [sq, setSq] = useState('')
-  const offered = data.services.filter((s) => s.active && doesService(barber, s.id))
+  const offered = data.services.filter((s) => s.active && (isAdmin || doesService(barber, s.id)))
   // serviço marcado que a profissional não faz some da seleção (antes travava o botão Agendar sem aviso)
-  useEffect(() => { if (barber && f.serviceIds.some((id) => !doesService(barber, id))) setF((x) => ({ ...x, serviceIds: x.serviceIds.filter((id) => doesService(barber, id)), time: '' })) }, [barber, f.serviceIds])
+  const okFor = (id) => doesService(data.barbers.find((b) => b.id === bOf(id)), id)
+  useEffect(() => { if (!isAdmin && barber && f.serviceIds.some((id) => !okFor(id))) setF((x) => ({ ...x, serviceIds: x.serviceIds.filter(okFor), time: '' })) }, [barber, f.serviceIds]) // eslint-disable-line react-hooks/exhaustive-deps
   const toggleSvc = (id) => setF({ ...f, time: '', serviceIds: f.serviceIds.includes(id) ? f.serviceIds.filter((x) => x !== id) : [...f.serviceIds, id] })
   const slots = useMemo(() => {
     if (!service || !barber) return []
@@ -114,18 +130,33 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
   }, [service, barber, f.date, busy, data.settings, edit])
 
   const match = f.phone.length >= 4 ? data.clients.find((c) => onlyDigits(c.phone).endsWith(onlyDigits(f.phone)) && onlyDigits(f.phone).length >= 10) : null
+  const groupTime = (bid, i) => gTimes[bid] || toHHMM(toMin(f.time || '00:00') + Number(service?.duration || 0) + others.slice(0, i).reduce((a, o) => a + totalDuration(f.serviceIds.filter((id) => bOf(id) === o).map(svcOf), data.barbers.find((b) => b.id === o)), 0))
+  const groupBad = (bid, i) => { const t = toMin(groupTime(bid, i)); const d = totalDuration(f.serviceIds.filter((id) => bOf(id) === bid).map(svcOf), data.barbers.find((b) => b.id === bid)); return busy.some((x) => x.barberId === bid && t < toMin(x.time) + Number(x.duration) && t + d > toMin(x.time)) }
   const save = async () => {
+    const clientName = f.name || match?.name || edit?.clientName
+    const phone = edit ? (f.phone || edit.clientPhone) : f.phone
     if (edit) {
-      await actions.updateAppointment(edit.id, { clientName: f.name || edit.clientName, notes: f.notes, barberId: f.barberId, serviceIds: f.serviceIds, date: f.date, time: f.time, duration: Number(service.duration), total: Number(service.price) }, 'Agendamento atualizado')
-      onClose(); return
+      if (isAdmin && edit.clientId && (clientName !== edit.clientName || onlyDigits(phone) !== onlyDigits(edit.clientPhone))) await actions.upsert('clients', { id: edit.clientId, name: clientName, phone: onlyDigits(phone) }, null)
+      await actions.updateAppointment(edit.id, { clientName, ...(isAdmin ? { clientPhone: onlyDigits(phone) } : {}), notes: f.notes, barberId: f.barberId, serviceIds: mainIds, date: f.date, time: f.time, duration: Number(service.duration), total: Number(service.price) }, 'Agendamento atualizado')
+    } else {
+      const r = await actions.staffBook({ clientName, clientPhone: phone, barberId: f.barberId, serviceIds: mainIds, date: f.date, time: f.time, duration: Number(service.duration), total: Number(service.price), notes: f.notes || '' })
+      const catalog = mainIds.reduce((a, id) => a + Number(svcOf(id)?.price || 0), 0)
+      if (r?.id && Math.abs(catalog - service.price) > 0.001) await actions.updateAppointment(r.id, { total: Number(service.price) })
     }
-    await actions.staffBook({ clientName: f.name || match?.name, clientPhone: f.phone, barberId: f.barberId, serviceIds: f.serviceIds, date: f.date, time: f.time, duration: Number(service.duration), total: Number(service.price) })
-    setF({ ...f, name: '', phone: '', time: '' }); onClose()
+    // outras profissionais: um agendamento para cada, com o valor combinado
+    for (const [i, bid] of others.entries()) {
+      const ids = f.serviceIds.filter((id) => bOf(id) === bid); const b = data.barbers.find((x) => x.id === bid)
+      const total = ids.reduce((a, id) => a + priceOf(id), 0)
+      const r = await actions.staffBook({ clientName, clientPhone: phone, barberId: bid, serviceIds: ids, date: f.date, time: groupTime(bid, i), duration: totalDuration(ids.map(svcOf), b), total, notes: f.notes || '' })
+      if (r?.id && Math.abs(ids.reduce((a, id) => a + Number(svcOf(id)?.price || 0), 0) - total) > 0.001) await actions.updateAppointment(r.id, { total })
+    }
+    if (!edit) setF({ ...f, name: '', phone: '', time: '', notes: '' })
+    setAssign({}); setPrices({}); setGTimes({}); onClose()
   }
   const tMin = f.time ? toMin(f.time) : null
   const extraOk = extra && tMin != null && service && !busy.some((b) => b.barberId === barber?.id && !(edit && f.date === edit.date && b.barberId === edit.barberId && b.time === edit.time) && tMin < toMin(b.time) + Number(b.duration) && tMin + Number(service.duration) > toMin(b.time))
   const keep = !!edit && f.date === edit.date && f.time === edit.time && f.barberId === edit.barberId && Number(service?.duration) <= Number(edit.duration)
-  const valid = (edit ? f.name : (f.name || match) && onlyDigits(f.phone).length >= 10) && f.serviceIds.every((id) => doesService(barber, id)) && f.time && (slots.includes(f.time) || keep || extraOk) && service && barber
+  const valid = (edit ? f.name : (f.name || match) && onlyDigits(f.phone).length >= 10) && mainIds.length > 0 && f.serviceIds.every(okFor) && !others.some(groupBad) && f.time && (slots.includes(f.time) || keep || extraOk) && service && barber
 
   return (
     <Modal open={open} onClose={onClose} title={edit ? 'Editar agendamento' : 'Novo agendamento'} footer={<Button block disabled={!valid} icon={Check} onClick={save}>{edit ? 'Salvar alterações' : 'Agendar'}</Button>}>
@@ -156,7 +187,31 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
           </select>
         </Field>
         <Field label="Dia" required><input type="date" value={f.date} min={today()} onChange={(e) => setF({ ...f, date: e.target.value, time: '' })} /></Field>
-        {edit && <Field label="Observações" className="span-2"><input value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Opcional" /></Field>}
+        {edit && isAdmin && <Field label="WhatsApp do cliente"><input inputMode="tel" value={maskPhone(f.phone || '')} onChange={(e) => setF({ ...f, phone: onlyDigits(e.target.value) })} /></Field>}
+        <Field label="Observações" className="span-2"><textarea rows={2} value={f.notes || ''} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Ex.: alergia, preferência, pedido especial" /></Field>
+        {isAdmin && f.serviceIds.length > 0 && (
+          <div className="span-2 ov-box">
+            <h4 className="sub-title">Quem faz cada serviço e valor</h4>
+            <p className="muted small">Troque a profissional de um serviço para dividir o atendimento. Cada profissional recebe o próprio agendamento, com o valor de cada serviço.</p>
+            <div className="split-list">
+              {f.serviceIds.map((id) => (
+                <div key={id} className={cls('split-row', !okFor(id) && 'bad')}>
+                  <b>{svcOf(id)?.name}</b>
+                  <select value={bOf(id)} onChange={(e) => setAssign({ ...assign, [id]: e.target.value === f.barberId ? undefined : e.target.value })}>
+                    {data.barbers.filter((b) => b.active).map((b) => <option key={b.id} value={b.id}>{b.name.split(' ')[0]}{doesService(b, id) ? '' : ' (não faz)'}</option>)}
+                  </select>
+                  <input inputMode="decimal" aria-label={`Valor de ${svcOf(id)?.name}`} value={prices[id] ?? String(Number(svcOf(id)?.price || 0))} onChange={(e) => setPrices({ ...prices, [id]: e.target.value.replace(/[^\d.,]/g, '') })} />
+                </div>
+              ))}
+            </div>
+            {others.map((bid, i) => (
+              <Field key={bid} label={`Horário com ${data.barbers.find((b) => b.id === bid)?.name.split(' ')[0]}`} hint={groupBad(bid, i) ? 'Ela já tem atendimento nesse horário. Escolha outro.' : ''}>
+                <input type="time" value={groupTime(bid, i)} onChange={(e) => setGTimes({ ...gTimes, [bid]: e.target.value })} />
+              </Field>
+            ))}
+            <p className="small"><b>Total: {money(f.serviceIds.reduce((a, id) => a + priceOf(id), 0))}</b>{others.length ? ` · ${others.length + 1} profissionais` : ''}</p>
+          </div>
+        )}
       </div>
       <label className="toggle-row mb-sm"><span><b>Encaixe fora do horário</b><small>Ex.: bem cedo ou depois de fechar. Só a equipe vê; a cliente não consegue marcar nesses horários pelo site.</small></span><span className="switch"><input type="checkbox" checked={extra} onChange={(e) => { setExtra(e.target.checked); setF({ ...f, time: '' }) }} /><span /></span></label>
       {extra && (
@@ -183,7 +238,7 @@ export function ApptRow({ a, onClick, showBarber = true }) {
     <button className={`appt-row st-${a.status}`} onClick={onClick}>
       <span className="appt-time">{a.time}</span>
       <span className="appt-info">
-        <b>{a.clientName}</b>
+        <b>{a.status === 'confirmado' ? '✅ ' : ''}{a.clientName}</b>
         <small>{serviceNames(a, data.services)}{showBarber && b ? ` · ${b.name.split(' ')[0]}` : ''}</small>
       </span>
       {showBarber && b && <Avatar name={b.name} color={b.color} size={28} />}

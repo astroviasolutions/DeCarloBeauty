@@ -73,6 +73,7 @@ export function StoreProvider({ children }) {
     resume: () => refresh(Date.now() - fullRef.current > 30 * 60000 ? 'full' : 'poll'),
     markRead: async (id) => { await db.markRead(id, session?.barberId); await refresh() },
     linkStaff: (email, barberId) => run(() => db.linkStaff(email, barberId), 'Acesso vinculado'),
+    createStaffLogin: (email, password, barberId) => run(() => db.createStaffLogin(email, password, barberId), 'Acesso criado. Envie os dados para ela.', 'full'),
     portal: (phone) => db.portal(phone),
     clientCancel: async (id, phone) => { await db.clientCancel(id, phone); if (session) await refresh(); else await loadPublic() },
     joinWaitlist: async (w) => { const r = await db.joinWaitlist(w); if (session) await refresh(); return r },

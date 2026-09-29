@@ -197,6 +197,13 @@ export function createSupabaseDB(url, key) {
       if (error) throw new Error('A função de envio não respondeu. Tente de novo em instantes.')
       return data
     },
+    async confirmInfo(id, token) { return must(await sb.rpc('confirm_info', { p_id: id, p_token: token })) },
+    async confirmAppointment(id, token) { return must(await sb.rpc('client_confirm', { p_id: id, p_token: token })) },
+    async createStaffLogin(email, password, barberId) {
+      const { data, error } = await sb.functions.invoke('send-push', { body: { type: 'create_staff', email, password, barber_id: barberId } })
+      if (error) { let m = ''; try { m = (await error.context.json()).error } catch { /* sem detalhe */ } throw new Error(m || 'Não foi possível criar o acesso. Confira se a função send-push foi atualizada.') }
+      return data
+    },
     async removePush(endpoint) { must(await sb.rpc('delete_push_subscription', { p_endpoint: endpoint })) },
     async testPush() {
       const { data, error } = await sb.functions.invoke('send-push', { body: { type: 'test' } })

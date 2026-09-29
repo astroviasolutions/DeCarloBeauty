@@ -10,6 +10,11 @@ export const MESSAGES = [
     text: 'Olá! Acabei de agendar pelo site:\n✨ {servico}\n📅 {data} às {hora}\n💆‍♀️ Profissional: {profissional}\n👤 {nome}\nConfirmado?',
   },
   {
+    key: 'askConfirm', label: 'Pedido de confirmação (com link)', who: 'Botão "Pedir confirmação" no agendamento',
+    vars: ['nome', 'servicos', 'data', 'clinica', 'endereco', 'link'],
+    text: 'Olá, {nome}! Seu horário na {clinica} 🦋\n📅 {data}\n{servicos}\n📍 {endereco}\n\nToque para confirmar: {link}',
+  },
+  {
     key: 'reminder', label: 'Lembrete do horário', who: 'A clínica envia pela agenda',
     vars: ['nome', 'servico', 'data', 'hora', 'profissional', 'clinica', 'endereco'],
     text: 'Olá, {nome}! Passando para lembrar do seu horário na {clinica}:\n✨ {servico}\n📅 {data} às {hora}\n💆‍♀️ com {profissional}\n📍 {endereco}\nTe esperamos com carinho! 🦋',

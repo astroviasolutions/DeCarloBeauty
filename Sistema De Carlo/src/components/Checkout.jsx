@@ -42,9 +42,12 @@ export default function Checkout({ appointment, presetBarberId, lockBarber, onDo
   useEffect(() => {
     if (!appointment) return
     setBarberId(appointment.barberId)
-    setItems(appointment.serviceIds.map((id) => {
-      const s = services.find((x) => x.id === id)
-      return { type: 'service', refId: id, name: s?.name || 'Serviço', price: Number(s?.price || 0), qty: 1 }
+    const base = appointment.serviceIds.map((id) => services.find((x) => x.id === id))
+    const cat = base.reduce((a, s) => a + Number(s?.price || 0), 0)
+    const k = cat > 0 && Number(appointment.total) > 0 ? Number(appointment.total) / cat : 1 // valor combinado no agendamento
+    setItems(appointment.serviceIds.map((id, i) => {
+      const s = base[i]
+      return { type: 'service', refId: id, name: s?.name || 'Serviço', price: Math.round(Number(s?.price || 0) * k * 100) / 100, qty: 1 }
     }))
     setClient(clients.find((c) => c.id === appointment.clientId) || { id: appointment.clientId, name: appointment.clientName, phone: appointment.clientPhone })
   }, [appointment, services, clients])

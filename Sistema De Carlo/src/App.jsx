@@ -4,6 +4,7 @@ import { ConfirmHost, Toast } from './components/ui'
 import Booking from './pages/Booking'
 import MeusHorarios from './pages/MeusHorarios'
 import Avaliar from './pages/Avaliar'
+import Confirmar from './pages/Confirmar'
 import TV from './pages/TV'
 import Clube from './pages/staff/Clube'
 import Financeiro from './pages/staff/Financeiro'
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="/" element={<Booking />} />
           <Route path="/meus" element={<MeusHorarios />} />
           <Route path="/avaliar/:id" element={<Avaliar />} />
+          <Route path="/confirmar/:id" element={<Confirmar />} />
           <Route path="/tv" element={<TV />} />
           <Route path="/painel" element={<Login />} />
           <Route path="/painel" element={<StaffLayout />}>

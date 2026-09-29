@@ -175,7 +175,7 @@ function DayGrid({ date, barbers, appts, onPick, onBook, onBlock }) {
                 {!off && (b.lunch || data.settings.breakTime) && (() => { const [ls, le] = b.lunch || data.settings.breakTime; return <div className="cal-lunch" style={{ top: (toMin(ls) - open) * PX_PER_MIN, height: (toMin(le) - toMin(ls)) * PX_PER_MIN }}><small>Almoço {ls}–{le}</small></div> })()}
                 {appts.filter((a) => a.barberId === b.id).map((a) => (
                   <button key={a.id} className={cls('cal-ev', `st-${a.status}`, a.duration < 30 && 'short')} style={{ top: (toMin(a.time) - open) * PX_PER_MIN + 1, height: Math.max(26, a.duration * PX_PER_MIN - 3) }} onClick={() => onPick(a)}>
-                    <b>{a.time} · {a.clientName.split(' ')[0]}</b>
+                    <b>{a.status === 'confirmado' ? '✅ ' : ''}{a.time} · {a.clientName.split(' ')[0]}</b>
                     <small>{serviceNames(a, data.services)}</small>
                   </button>
                 ))}
