@@ -191,7 +191,7 @@ export default function Booking() {
             <div className="hero-top-actions">
               <ThemeToggle className="on-art" />
               <Link to="/meus" className="btn btn-glass"><CalendarDays size={16} /> <span>Meus horários</span></Link>
-              <Link to="/painel" className="btn btn-glass hide-sm"><Lock size={16} /> <span>Área da equipe</span></Link>
+              <Link to="/painel" className="btn btn-glass btn-login" aria-label="Área da equipe (login)"><Lock size={16} /> <span>Área da equipe</span></Link>
             </div>
           </div>
           <div className="hero-title">

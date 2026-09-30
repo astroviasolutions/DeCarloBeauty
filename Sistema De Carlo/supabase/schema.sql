@@ -272,6 +272,7 @@ begin
   if length(regexp_replace(p_client_phone, '\D', '', 'g')) < 10 then raise exception 'WhatsApp inválido'; end if;
   if not exists(select 1 from barbers where id = p_barber_id and active) then raise exception 'Profissional indisponível'; end if;
   if is_staff() and not is_admin() and p_barber_id is distinct from my_barber_id() then raise exception 'Você só pode agendar na sua própria agenda'; end if;
+  if is_staff() and not is_admin() and coalesce((select (privacy->'bookingBlocked') ? my_barber_id() from settings where id = 'main'), false) then raise exception 'Agendamento pelo painel bloqueado para você. Fale com a gestão.'; end if;
   if exists(select 1 from barbers where id = p_barber_id and cardinality(service_ids) > 0 and not (p_service_ids <@ service_ids)) then
     raise exception 'Essa profissional não faz esse serviço. Escolha outra, por favor.'; end if;
 

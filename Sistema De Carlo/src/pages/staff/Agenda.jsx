@@ -6,7 +6,7 @@ import { BlockModal, BlocksList, WaitlistPanel } from '../../components/Team'
 import { WaitlistModal } from '../../components/Loyalty'
 import { AppointmentModal, ApptRow, NewAppointmentModal, serviceNames } from '../../components/Appointments'
 import {
-  addDays, cls, endOfMonth, fmtDate, fmtDateLong, money, MONTHS, nowMin, parseDate, relDay, startOfMonth, startOfWeek, STATUS, sum, today, toHHMM, toMin, WD_SHORT, weekday,
+  addDays, canBook, cls, endOfMonth, fmtDate, fmtDateLong, money, MONTHS, nowMin, parseDate, relDay, startOfMonth, startOfWeek, STATUS, sum, today, toHHMM, toMin, WD_SHORT, weekday,
 } from '../../lib/utils'
 
 const PX_PER_MIN = 1.6
@@ -18,7 +18,8 @@ const VIEWS = [{ value: 'dia', label: 'Dia' }, { value: 'semana', label: 'Semana
  * - `onlyBarberId`: visão da profissional (só a agenda dela).
  */
 export default function Agenda({ onlyBarberId }) {
-  const { data } = useStore()
+  const { data, session } = useStore()
+  const allowBook = canBook(data.settings, session)
   const [view, setView] = useState('dia')
   const [date, setDate] = useState(today())
   const [range, setRange] = useState({ from: today(), to: addDays(today(), 6) })
@@ -52,7 +53,7 @@ export default function Agenda({ onlyBarberId }) {
       : view === 'mes' ? `${MONTHS[parseDate(date).getMonth()].replace(/^./, (c) => c.toUpperCase())} de ${parseDate(date).getFullYear()}`
         : `${fmtDate(range.from)} a ${fmtDate(range.to)}`
   const openDay = (d) => { setDate(d); setView('dia') }
-  const book = (p) => setNewFor({ barberId: onlyBarberId || p.barberId || barbers[0]?.id, date: p.date || date, time: p.time || '' })
+  const book = (p) => allowBook && setNewFor({ barberId: onlyBarberId || p.barberId || barbers[0]?.id, date: p.date || date, time: p.time || '' })
 
   return (
     <div>
@@ -63,7 +64,7 @@ export default function Agenda({ onlyBarberId }) {
         </div>
         <div className="head-actions">
           <Button variant="ghost" icon={CalendarOff} onClick={() => setBlockOpen(true)}>Bloquear</Button>
-          <Button icon={Plus} onClick={() => book({ date: view === 'dia' ? date : today() })}>Agendar</Button>
+          {allowBook && <Button icon={Plus} onClick={() => book({ date: view === 'dia' ? date : today() })}>Agendar</Button>}
         </div>
       </div>
 

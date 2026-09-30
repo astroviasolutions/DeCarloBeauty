@@ -1676,3 +1676,5 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   .line { min-width: 0; flex-wrap: wrap; }
   .line > * { min-width: 0; }
 }
+@media (max-width: 600px) { .btn-login span { display: none; } .btn-login { width: 44px; padding: 0; justify-content: center; gap: 0; } .btn-login svg { flex: none; width: 18px; height: 18px; } }
+.btn-glass { white-space: nowrap; }

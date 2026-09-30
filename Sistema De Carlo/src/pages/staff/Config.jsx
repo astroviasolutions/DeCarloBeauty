@@ -113,6 +113,10 @@ export default function Config() {
           </Card>
           <Card title="Privacidade da equipe">
             <label className="toggle-row"><span><b><EyeOff size={14} /> Ocultar contato das clientes</b><small>As profissionais não veem telefone nem WhatsApp das clientes. Só a gestão.</small></span><span className="switch"><input type="checkbox" checked={privacy.hideContacts !== false} onChange={(e) => setS({ ...s, privacy: { ...privacy, hideContacts: e.target.checked } })} /><span /></span></label>
+            <div className="toggle-row"><span><b>Quem pode agendar pelo painel</b><small>Todas podem marcar horários na própria agenda. Toque para bloquear (fica riscado).</small></span></div>
+            <div className="days">
+              {data.barbers.filter((b) => b.active).map((b) => { const off = (privacy.bookingBlocked || []).includes(b.id); return <button key={b.id} type="button" className={`pill ${off ? '' : 'on'}`} style={off ? { textDecoration: 'line-through', opacity: 0.6 } : undefined} onClick={() => setS({ ...s, privacy: { ...privacy, bookingBlocked: off ? privacy.bookingBlocked.filter((x) => x !== b.id) : [...(privacy.bookingBlocked || []), b.id] } })}>{b.name.split(' ')[0]}</button> })}
+            </div>
             <div className="toggle-row"><span><b>Quem pode cobrar (Caixa)</b><small>A gestão sempre pode. Marque quem mais pode lançar cobranças.</small></span></div>
             <div className="days">
               {data.barbers.filter((b) => b.active).map((b) => { const on = (privacy.billingAllowed || []).includes(b.id); return <button key={b.id} type="button" className={`pill ${on ? 'on' : ''}`} onClick={() => setS({ ...s, privacy: { ...privacy, billingAllowed: on ? privacy.billingAllowed.filter((x) => x !== b.id) : [...(privacy.billingAllowed || []), b.id] } })}>{b.name.split(' ')[0]}</button> })}

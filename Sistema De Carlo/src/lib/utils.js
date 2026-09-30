@@ -121,3 +121,5 @@ export const PAYMENTS = {
 
 /** Cobrança: a gestão sempre pode; profissional só se liberada em Ajustes → Privacidade */
 export const canCharge = (settings, session) => session?.role === 'admin' || (settings?.privacy?.billingAllowed || []).includes(session?.barberId)
+/** Agendar pelo painel: liberado para todas; a gestão pode bloquear alguém em Ajustes → Privacidade */
+export const canBook = (settings, session) => session?.role === 'admin' || !(settings?.privacy?.bookingBlocked || []).includes(session?.barberId)
