@@ -7,7 +7,7 @@ import { anamneseAlerts, ClientModal } from '../pages/staff/Cadastros'
 import { PortfolioModal } from './Loyalty'
 import { canCharge as canChargeFn, cls, fmtDateLong, fmtPhone, freeSlots, maskPhone, money, onlyDigits, relDay, today, toHHMM, toMin, waLink, weekday } from '../lib/utils'
 import { msg as fillMsg } from '../lib/messages'
-import { db } from '../data'
+import { db, isDemo } from '../data'
 import { doesService, totalDuration } from '../lib/commission'
 
 export function serviceNames(appt, services) {
@@ -38,7 +38,7 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
   // todos os horários da cliente no mesmo dia vão juntos na mensagem
   const sameDay = data.appointments.filter((a) => a.date === appt.date && ['agendado', 'confirmado'].includes(a.status) && (a.clientId ? a.clientId === appt.clientId : a.clientName === appt.clientName)).sort((a, b) => a.time.localeCompare(b.time))
   const lines = (sameDay.length ? sameDay : [appt]).map((a) => `• ${a.time} ${serviceNames(a, data.services)} com ${data.barbers.find((b) => b.id === a.barberId)?.name.split(' ')[0] || ''}`).join('\n')
-  const askMsg = fillMsg(data.settings, 'askConfirm', { nome: appt.clientName.split(' ')[0], servicos: lines, data: relDay(appt.date).toLowerCase() + ' · ' + fmtDateLong(appt.date), link: `${location.origin}${location.pathname}#/confirmar/${appt.id}?t=${appt.confirmToken || ''}` })
+  const askMsg = fillMsg(data.settings, 'askConfirm', { nome: appt.clientName.split(' ')[0], servicos: lines, data: relDay(appt.date).toLowerCase() + ' · ' + fmtDateLong(appt.date), link: `${location.origin}${location.pathname}#/confirmar/${appt.id}?t=${appt.confirmToken || 'demo'}` })
   const reminder = fillMsg(data.settings, 'reminder', { nome: appt.clientName.split(' ')[0], servico: svc, data: relDay(appt.date).toLowerCase(), hora: appt.time, profissional: barber?.name })
   const client = data.clients.find((c) => c.id === appt.clientId)
   const alerts = anamneseAlerts(client?.anamnese)
@@ -79,7 +79,7 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
           </div>
         )}
         <div className="appt-actions">
-          {hasPhone && open && appt.confirmToken && <a className="btn btn-wa" href={waLink(appt.clientPhone, askMsg)} target="_blank" rel="noreferrer"><Check size={18} /> Pedir confirmação{sameDay.length > 1 ? ` (${sameDay.length} horários)` : ''}</a>}
+          {hasPhone && open && (appt.confirmToken || isDemo) && <a className="btn btn-wa" href={waLink(appt.clientPhone, askMsg)} target="_blank" rel="noreferrer"><Check size={18} /> Pedir confirmação{sameDay.length > 1 ? ` (${sameDay.length} horários)` : ''}</a>}
           {hasPhone && <a className="btn btn-wa" href={waLink(appt.clientPhone, reminder)} target="_blank" rel="noreferrer"><MessageCircle size={18} /> Lembrar no WhatsApp</a>}
           {open && <Button variant="ghost" icon={BellRing} disabled={pinging} onClick={ping}>{pinging ? 'Enviando…' : 'Notificar no celular'}</Button>}
           {open && <Button variant="ghost" icon={Pencil} onClick={() => setEditing(true)}>Editar</Button>}
@@ -102,7 +102,7 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
   const [busy, setBusy] = useState([])
   const [cq, setCq] = useState('')
   const [extra, setExtra] = useState(false) // encaixe fora do horário (só a equipe vê)
-  useEffect(() => { if (open && !edit) setF((x) => ({ ...x, date: initialDate || x.date, time: initialTime || '', barberId: initialBarber || x.barberId || data.barbers.find((b) => b.active)?.id, serviceIds: x.serviceIds.length ? x.serviceIds : [data.services.find((s) => s.active)?.id].filter(Boolean) })) }, [open, initialDate, initialTime, initialBarber]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open && !edit) setF((x) => ({ ...x, date: initialDate || x.date, time: initialTime || '', barberId: initialBarber || x.barberId || data.barbers.find((b) => b.active)?.id, serviceIds: x.serviceIds.length ? x.serviceIds : [data.services.find((s) => s.active && doesService(data.barbers.find((b) => b.id === (initialBarber || x.barberId)), s.id))?.id].filter(Boolean) })); if (open && !edit && initialTime) { const h = data.settings.hours?.[weekday(initialDate || today())]; setExtra(!h || toMin(initialTime) < toMin(h[0]) || toMin(initialTime) >= toMin(h[1])) } }, [open, initialDate, initialTime, initialBarber]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (open && f.date) actions.busy(f.date).then(setBusy) }, [open, f.date, actions])
 
   const isAdmin = !lockBarber
@@ -156,10 +156,48 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
   const tMin = f.time ? toMin(f.time) : null
   const extraOk = extra && tMin != null && service && !busy.some((b) => b.barberId === barber?.id && !(edit && f.date === edit.date && b.barberId === edit.barberId && b.time === edit.time) && tMin < toMin(b.time) + Number(b.duration) && tMin + Number(service.duration) > toMin(b.time))
   const keep = !!edit && f.date === edit.date && f.time === edit.time && f.barberId === edit.barberId && Number(service?.duration) <= Number(edit.duration)
+  // por que não dá para agendar + sugestão de horário
+  const mine = busy.filter((b) => b.barberId === barber?.id && !(edit && f.date === edit.date && b.barberId === edit.barberId && b.time === edit.time))
+  const dur = Number(service?.duration || 0)
+  const hrs = data.settings.hours?.[weekday(f.date)]
+  const lunch = barber?.lunch || data.settings.breakTime
+  const hitAt = (t, withLunch) => mine.find((b) => t < toMin(b.time) + Number(b.duration) && t + dur > toMin(b.time)) || (withLunch && lunch && t < toMin(lunch[1]) && t + dur > toMin(lunch[0]) ? { lunch: true } : null)
+  const suggest = (t) => {
+    if (!extra) return slots.find((x) => toMin(x) >= t) || slots[slots.length - 1]
+    for (let x = t; x + dur <= 23 * 60 + 59; x += 5) if (!hitAt(x, false)) return toHHMM(x)
+    return null
+  }
+  const whoAt = (b) => {
+    const a = data.appointments.find((x) => x.date === f.date && x.time === b.time && x.status !== 'cancelado' && x.status !== 'faltou' && (x.barberId === barber.id || (barber.room && data.barbers.find((y) => y.id === x.barberId)?.room?.trim().toLowerCase() === barber.room.trim().toLowerCase())))
+    if (a && a.barberId !== barber.id) return `a sala está ocupada às ${b.time} (${a.clientName} com ${data.barbers.find((y) => y.id === a.barberId)?.name.split(' ')[0]})`
+    if (a) return `já tem ${a.clientName.split(' ')[0]} agendada às ${b.time} (até ${toHHMM(toMin(b.time) + Number(b.duration))})`
+    return Number(b.duration) >= 1440 ? 'o dia está bloqueado na agenda dela' : `esse horário está ocupado/bloqueado das ${b.time} às ${toHHMM(toMin(b.time) + Number(b.duration))}`
+  }
+  const why = (() => {
+    if (!barber) return 'Escolha a profissional.'
+    if (!mainIds.length) return 'Escolha pelo menos um serviço.'
+    const no = f.serviceIds.find((id) => !okFor(id)); if (no) return `${data.barbers.find((b) => b.id === bOf(no))?.name.split(' ')[0]} não faz ${svcOf(no)?.name}. Escolha outra profissional para esse serviço.`
+    if (!edit && !(f.name || match)) return 'Informe o nome da cliente.'
+    if (!edit && onlyDigits(f.phone).length < 10) return 'Informe o WhatsApp com DDD (ex.: 41 99999-9999).'
+    if (!f.time) return extra ? 'Digite o horário do encaixe.' : (slots.length ? 'Escolha um horário livre.' : 'Sem horário livre no expediente. Ligue "Encaixe fora do horário" para marcar mesmo assim.')
+    const t = toMin(f.time)
+    const h = hitAt(t, !extra)
+    const sug = suggest(t)
+    const tip = sug && sug !== f.time ? ` Minha sugestão: encaixar às ${sug}.` : ''
+    if (h?.lunch) return `${f.time} cai no almoço dela (${lunch[0]}–${lunch[1]}).${tip} Ou ligue "Encaixe fora do horário".`
+    if (h) { const m = whoAt(h); return `${m[0].toUpperCase()}${m.slice(1)}, e o atendimento leva ${dur} min.${tip}` }
+    if (!extra && !slots.includes(f.time) && !keep) {
+      if (barber.daysOff?.includes(weekday(f.date)) || !hrs) return 'Esse dia é folga/fechado. Ligue "Encaixe fora do horário" para marcar mesmo assim.'
+      if (t < toMin(hrs[0]) || t + dur > toMin(hrs[1])) return `${f.time} + ${dur} min passa do horário de funcionamento (${hrs[0]}–${hrs[1]}). Ligue "Encaixe fora do horário" para marcar mesmo assim.`
+      return `${f.time} não cabe na grade.${tip}`
+    }
+    const gb = others.findIndex(groupBad); if (gb >= 0) return `${data.barbers.find((b) => b.id === others[gb])?.name.split(' ')[0]} já tem atendimento às ${groupTime(others[gb], gb)}. Mude o horário dela.`
+    return ''
+  })()
   const valid = (edit ? f.name : (f.name || match) && onlyDigits(f.phone).length >= 10) && mainIds.length > 0 && f.serviceIds.every(okFor) && !others.some(groupBad) && f.time && (slots.includes(f.time) || keep || extraOk) && service && barber
 
   return (
-    <Modal open={open} onClose={onClose} title={edit ? 'Editar agendamento' : 'Novo agendamento'} footer={<Button block disabled={!valid} icon={Check} onClick={save}>{edit ? 'Salvar alterações' : 'Agendar'}</Button>}>
+    <Modal open={open} onClose={onClose} title={edit ? 'Editar agendamento' : 'Novo agendamento'} footer={<>{!valid && why && <p className="form-err mb-sm" style={{ width: '100%' }}>{why}</p>}<Button block disabled={!valid} icon={Check} onClick={save}>{edit ? 'Salvar alterações' : 'Agendar'}</Button></>}>
       <div className="form-grid">
         {!edit && (
           <Field label="Buscar cliente cadastrada" className="span-2">
@@ -213,15 +251,15 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
           </div>
         )}
       </div>
-      <label className="toggle-row mb-sm"><span><b>Encaixe fora do horário</b><small>Ex.: bem cedo ou depois de fechar. Só a equipe vê; a cliente não consegue marcar nesses horários pelo site.</small></span><span className="switch"><input type="checkbox" checked={extra} onChange={(e) => { setExtra(e.target.checked); setF({ ...f, time: '' }) }} /><span /></span></label>
+      <label className="toggle-row mb-sm"><span><b>Encaixe fora do horário</b><small>Ex.: bem cedo ou depois de fechar. Só a equipe vê; a cliente não consegue marcar nesses horários pelo site.</small></span><span className="switch"><input type="checkbox" checked={extra} onChange={(e) => setExtra(e.target.checked)} /><span /></span></label>
       {extra && (
-        <Field label="Horário do encaixe" required hint={f.time && !extraOk ? 'Esse horário bate com outro atendimento dessa profissional.' : ''}>
+        <Field label="Horário do encaixe" required >
           <input type="time" value={f.time} onChange={(e) => setF({ ...f, time: e.target.value })} />
         </Field>
       )}
       {!extra && <Field label="Horário livre" required>
         {keep && <p className="muted small">Mantendo {f.time}. Para mudar, escolha outro horário abaixo.</p>}
-        {f.time && !keep && !slots.includes(f.time) && slots.length > 0 && <p className="form-err">O horário {f.time} não cabe esse(s) serviço(s) com esta profissional. Escolha outro abaixo.</p>}
+        {f.time && !keep && !slots.includes(f.time) && <p className="form-err">{why || `O horário ${f.time} não está na grade.`}</p>}
         {slots.length ? (
           <div className="slot-grid">{slots.map((t) => <button key={t} className={`slot ${f.time === t ? 'on' : ''}`} onClick={() => setF({ ...f, time: t })}>{t}</button>)}</div>
         ) : <p className="muted">Sem horários livres para esta profissional neste dia.</p>}

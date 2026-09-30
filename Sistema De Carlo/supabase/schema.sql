@@ -210,6 +210,8 @@ alter table settings add column if not exists page jsonb not null default '{}';
 alter table barbers add column if not exists service_overrides jsonb not null default '{}';
 alter table barbers add column if not exists service_ids text[] not null default '{}';  -- serviços que ela faz (vazio = todos)
 alter table barbers add column if not exists lunch jsonb;  -- ["12:00","13:00"] almoço da profissional (vazio = intervalo geral)
+alter table barbers add column if not exists room text;              -- sala dividida: mesmo nome = um horário ocupa a sala para as duas
+alter table services add column if not exists no_room boolean not null default false;  -- serviço feito fora da sala
 -- sincronização leve: o painel busca só o que mudou (economiza o tráfego do plano gratuito)
 alter table appointments add column if not exists updated_at timestamptz not null default now();
 alter table clients add column if not exists updated_at timestamptz not null default now();
@@ -238,7 +240,7 @@ $$ select barber_id from staff where user_id = auth.uid() $$;
 -- Vitrine pública das profissionais (sem telefone e sem comissões; só o tempo de cada procedimento)
 drop view if exists barbers_public;
 create view barbers_public as
-  select b.id, b.name, b.color, b.days_off, b.active, b.bio, b.service_ids, b.lunch,
+  select b.id, b.name, b.color, b.days_off, b.active, b.bio, b.service_ids, b.lunch, b.room,
          coalesce((select jsonb_object_agg(e.key, e.value->'duration') from jsonb_each(b.service_overrides) e
                    where coalesce(e.value->>'duration', '') <> ''), '{}'::jsonb) as durations,
          coalesce((select avg(stars) from reviews r where r.barber_id = b.id), 0) as rating_avg,
@@ -257,6 +259,12 @@ language sql stable security definer set search_path = public as $$
   select b.barber_id, coalesce(to_char(b.start, 'HH24:MI'), '00:00'),
          case when b.start is null then 1440 else (extract(epoch from (b."end" - b.start)) / 60)::int end
   from blocks b where b.date = p_date
+  union all -- sala dividida: o horário de uma ocupa a sala para a outra
+  select b2.id, to_char(a.time, 'HH24:MI'), a.duration
+  from appointments a join barbers b1 on b1.id = a.barber_id
+  join barbers b2 on b2.id <> b1.id and lower(trim(b2.room)) = lower(trim(b1.room))
+  where a.date = p_date and a.status not in ('cancelado','faltou') and coalesce(trim(b1.room), '') <> ''
+    and exists(select 1 from services s where s.id = any(a.service_ids) and not s.no_room)
 $$;
 grant execute on function get_busy(date) to anon, authenticated;
 
@@ -291,6 +299,14 @@ begin
       and p_time < a.time + make_interval(mins => a.duration)
       and p_time + make_interval(mins => v_dur) > a.time
   ) then raise exception 'Esse horário acabou de ser reservado. Escolha outro, por favor.'; end if;
+  if exists(
+    select 1 from appointments a join barbers b1 on b1.id = a.barber_id join barbers me on me.id = p_barber_id
+    where a.barber_id <> p_barber_id and coalesce(trim(me.room), '') <> '' and lower(trim(b1.room)) = lower(trim(me.room))
+      and a.date = p_date and a.status not in ('cancelado','faltou')
+      and p_time < a.time + make_interval(mins => a.duration) and p_time + make_interval(mins => v_dur) > a.time
+      and exists(select 1 from services s where s.id = any(a.service_ids) and not s.no_room)
+      and exists(select 1 from services s where s.id = any(p_service_ids) and not s.no_room)
+  ) then raise exception 'A sala está ocupada nesse horário. Escolha outro, por favor.'; end if;
   if exists(
     select 1 from blocks b where b.barber_id = p_barber_id and b.date = p_date
       and (b.start is null or (p_time < b."end" and p_time + make_interval(mins => v_dur) > b.start))

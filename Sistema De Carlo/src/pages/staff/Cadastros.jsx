@@ -84,10 +84,24 @@ export function ClientModal({ c: raw, onClose, restricted = false }) {
   const [bday, setBday] = useState(c.birthday ? `${c.birthday.slice(3)}/${c.birthday.slice(0, 2)}` : '')
   const bdayISO = (() => { const d = onlyDigits(bday); return d.length === 4 ? `${d.slice(2)}-${d.slice(0, 2)}` : '' })()
   const [hq, setHq] = useState('')
+  const [nm, setNm] = useState(c.name || '')
+  const [ph, setPh] = useState(onlyDigits(c.phone || '').startsWith('sem') ? '' : onlyDigits(c.phone || ''))
+  const saveClient = async () => {
+    const name = nm.trim() || c.name
+    const phone = restricted ? undefined : (ph.length >= 10 ? ph : c.phone)
+    if (!restricted && ph && ph.length < 10) return actions.notify('WhatsApp incompleto: use DDD + número', 'bad')
+    if (!restricted && phone !== c.phone && data.clients.some((x) => x.id !== c.id && onlyDigits(x.phone) === phone)) return actions.notify('Já existe outra cliente com esse WhatsApp', 'bad')
+    await actions.upsert('clients', { ...stripClient(c), ...(restricted ? {} : { name, phone }), notes, anamnese: an, birthday: bdayISO || c.birthday || '' }, 'Cliente atualizado')
+    // horários futuros passam a usar o nome e o WhatsApp corrigidos
+    if (!restricted && (name !== c.name || phone !== c.phone)) {
+      for (const a of data.appointments.filter((x) => x.clientId === c.id && x.date >= today() && ['agendado', 'confirmado'].includes(x.status))) await actions.updateAppointment(a.id, { clientName: name, clientPhone: phone })
+    }
+    onClose()
+  }
   const history = data.appointments.filter((a) => a.clientId === c.id).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))
   const back = fillMsg(data.settings, 'callClient', { nome: c.name.split(' ')[0], link: bookingLink() })
   return (
-    <Modal open onClose={onClose} title={c.name} footer={<Button block onClick={async () => { await actions.upsert('clients', { ...stripClient(c), notes, anamnese: an, birthday: bdayISO || c.birthday || '' }, 'Cliente atualizado'); onClose() }}>Salvar</Button>}>
+    <Modal open onClose={onClose} title={c.name} footer={<Button block onClick={saveClient}>Salvar</Button>}>
       <div className="mini-kpis row">
         <div><b>{c.visits}</b> visitas</div><div><b>{money(c.spent)}</b> gasto</div><div><b>{c.noShows}</b> faltas</div>
       </div>
@@ -95,6 +109,8 @@ export function ClientModal({ c: raw, onClose, restricted = false }) {
       {c.club && <p className="muted small mt-sm"><Crown size={13} /> Clube {c.club.plan.name} · {c.club.paid ? 'mensalidade em dia' : 'mensalidade pendente'}</p>}
       {!restricted && onlyDigits(c.phone).length >= 10 && <a className="btn btn-wa btn-block mt" href={waLink(c.phone, back)} target="_blank" rel="noreferrer"><MessageCircle size={18} /> Chamar no WhatsApp</a>}
       <div className="form-grid mt">
+        {!restricted && <Field label="Nome" required><input value={nm} onChange={(e) => setNm(e.target.value)} /></Field>}
+        {!restricted && <Field label="WhatsApp" required><input inputMode="tel" value={maskPhone(ph)} onChange={(e) => setPh(onlyDigits(e.target.value).slice(0, 11))} placeholder="(41) 99999-9999" /></Field>}
         <Field label="Aniversário (dd/mm)"><input inputMode="numeric" value={bday} onChange={(e) => { const d = onlyDigits(e.target.value).slice(0, 4); setBday(d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d) }} placeholder="dd/mm" /></Field>
         <Field label="Observações"><input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Preferências, tipo de pele, observações…" /></Field>
       </div>
@@ -262,7 +278,8 @@ export function Catalogo() {
             <Field label="Preço (R$)" required><input inputMode="decimal" value={edit.price} onChange={(e) => setEdit({ ...edit, price: e.target.value })} /></Field>
             <Field label="Comissão (%)"><input inputMode="numeric" value={edit.commission} onChange={(e) => setEdit({ ...edit, commission: e.target.value })} /></Field>
             {isSvc ? (
-              <Field label="Duração padrão (min)" required><input inputMode="numeric" value={edit.duration} onChange={(e) => setEdit({ ...edit, duration: onlyDigits(e.target.value).slice(0, 3) })} /></Field>
+              <><Field label="Duração padrão (min)" required><input inputMode="numeric" value={edit.duration} onChange={(e) => setEdit({ ...edit, duration: onlyDigits(e.target.value).slice(0, 3) })} /></Field>
+              <label className="toggle-row span-2"><span><b>Usa a sala da profissional</b><small>Desligue se o serviço é feito fora da sala (não bloqueia a colega que divide a sala).</small></span><span className="switch"><input type="checkbox" checked={!edit.noRoom} onChange={(e) => setEdit({ ...edit, noRoom: !e.target.checked })} /><span /></span></label></>
             ) : (
               <Field label="Estoque"><input inputMode="numeric" value={edit.stock} onChange={(e) => setEdit({ ...edit, stock: e.target.value })} /></Field>
             )}
@@ -301,7 +318,7 @@ export function Equipe() {
   const linked = (id) => data.staff?.find((x) => x.barberId === id)?.email || ''
   const save = async () => {
     const { accessEmail: _ae, accessPass: _ap, accessSent: _as, ...clean } = edit
-    const r = { ...clean, serviceOverrides: cleanOverrides(edit.serviceOverrides), goal: Number(edit.goal || 0), serviceRate: edit.serviceRate === '' || edit.serviceRate == null ? null : Number(edit.serviceRate), productRate: edit.productRate === '' || edit.productRate == null ? null : Number(edit.productRate), phone: onlyDigits(edit.phone) }
+    const r = { ...clean, serviceOverrides: cleanOverrides(edit.serviceOverrides), goal: Number(edit.goal || 0), serviceRate: edit.serviceRate === '' || edit.serviceRate == null ? null : Number(edit.serviceRate), productRate: edit.productRate === '' || edit.productRate == null ? null : Number(edit.productRate), phone: onlyDigits(edit.phone), room: (edit.room || '').trim() || null }
     if (!isDemo) delete r.pin
     await actions.upsert('barbers', r); setEdit(null)
   }
@@ -347,6 +364,7 @@ export function Equipe() {
           <div className="form-grid">
             <Field label="Nome" required className="span-2"><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
             <Field label="WhatsApp"><input inputMode="tel" value={maskPhone(edit.phone)} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} /></Field>
+            <Field label="Sala (opcional)" hint="Quem divide a mesma sala: use o mesmo nome. Um horário ocupa a sala para as duas."><input value={edit.room || ''} onChange={(e) => setEdit({ ...edit, room: e.target.value })} placeholder="Ex.: Sala 2" /></Field>
             <Field label="Almoço (opcional)" hint="Vazio = usa o intervalo geral de Ajustes">
               <div className="range">
                 <input type="time" aria-label="Início do almoço" value={edit.lunch?.[0] || ''} onChange={(e) => setEdit({ ...edit, lunch: e.target.value ? [e.target.value, edit.lunch?.[1] || '13:00'] : null })} />
@@ -415,5 +433,5 @@ function cleanOverrides(o = {}) {
 }
 
 /** Campos da profissional que vão para o banco (sem os calculados na tela) */
-const stripBarber = ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds, lunch }) =>
-  ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds: serviceIds || [], lunch: lunch || null })
+const stripBarber = ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds, lunch, room }) =>
+  ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds: serviceIds || [], lunch: lunch || null, room: room || null })

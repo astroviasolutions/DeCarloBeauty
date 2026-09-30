@@ -173,6 +173,9 @@ function DayGrid({ date, barbers, appts, onPick, onBook, onBlock }) {
                   const en = x.end ? toMin(x.end) : close
                   return <button key={x.id} type="button" className="cal-block" style={{ top: (st - open) * PX_PER_MIN, height: (en - st) * PX_PER_MIN }} onClick={() => onBlock?.(x)} title="Editar ou excluir bloqueio"><b>{x.reason}</b><small>{x.start ? `${x.start}–${x.end}` : 'Dia inteiro'} · editar</small></button>
                 })}
+                {b.room && data.appointments.filter((a) => a.date === date && a.barberId !== b.id && !['cancelado', 'faltou'].includes(a.status) && data.barbers.find((x) => x.id === a.barberId)?.room?.trim().toLowerCase() === b.room.trim().toLowerCase() && a.serviceIds.some((id) => !data.services.find((s) => s.id === id)?.noRoom)).map((a) => (
+                  <div key={`room-${a.id}`} className="cal-room" style={{ top: (toMin(a.time) - open) * PX_PER_MIN, height: a.duration * PX_PER_MIN }}><small>{b.room} ocupada · com {data.barbers.find((x) => x.id === a.barberId)?.name.split(' ')[0]}</small></div>
+                ))}
                 {!off && (b.lunch || data.settings.breakTime) && (() => { const [ls, le] = b.lunch || data.settings.breakTime; return <div className="cal-lunch" style={{ top: (toMin(ls) - open) * PX_PER_MIN, height: (toMin(le) - toMin(ls)) * PX_PER_MIN }}><small>Almoço {ls}–{le}</small></div> })()}
                 {appts.filter((a) => a.barberId === b.id).map((a) => (
                   <button key={a.id} className={cls('cal-ev', `st-${a.status}`, a.duration < 30 && 'short')} style={{ top: (toMin(a.time) - open) * PX_PER_MIN + 1, height: Math.max(26, a.duration * PX_PER_MIN - 3) }} onClick={() => onPick(a)}>

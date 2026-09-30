@@ -1678,3 +1678,5 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 }
 @media (max-width: 600px) { .btn-login span { display: none; } .btn-login { width: 44px; padding: 0; justify-content: center; gap: 0; } .btn-login svg { flex: none; width: 18px; height: 18px; } }
 .btn-glass { white-space: nowrap; }
+.cal-room { position: absolute; left: 4px; right: 4px; z-index: 1; pointer-events: none; border-radius: 6px; border: 1px dashed var(--red); background: repeating-linear-gradient(135deg, transparent 0 6px, var(--hatch) 6px 12px); padding: 4px 8px; }
+.cal-room small { font-size: 11px; color: var(--red); font-weight: 600; }
