@@ -107,7 +107,7 @@ export async function clinicReportPDF({ data, from, to, barberId = 'all', detail
   const doc = await newDoc('Relatório gerencial', `${brDate(from)} a ${brDate(to)} · ${who}`, data.settings)
   const revenue = sum(sales, (s) => s.total)
   const items = sales.flatMap((s) => s.items)
-  const svcRev = sum(items.filter((i) => i.type === 'service'), (i) => i.price * i.qty)
+  const svcRev = sum(items.filter((i) => i.type === 'service' || i.type === 'extra'), (i) => i.price * i.qty)
   const prdRev = sum(items.filter((i) => i.type === 'product'), (i) => i.price * i.qty)
   const comm = sum(sales, (s) => s.commissionTotal)
   const disc = sum(sales, (s) => s.discount)

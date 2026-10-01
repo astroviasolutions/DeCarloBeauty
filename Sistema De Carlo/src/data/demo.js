@@ -94,6 +94,7 @@ export function createDemoDB() {
     },
 
     async book(p) {
+      if (p.clientId && onlyDigits(p.clientPhone).length < 10) { const c = data.clients.find((x) => x.id === p.clientId); if (c) p = { ...p, clientName: c.name, clientPhone: c.phone } }
       if (overlaps(p.barberId, p.date, p.time, p.duration)) throw new Error('Esse horário acabou de ser reservado. Escolha outro, por favor.')
       const blocked = data.blocks.some((b) => b.barberId === p.barberId && b.date === p.date && (!b.start || (toMin(p.time) < toMin(b.end) && toMin(p.time) + Number(p.duration) > toMin(b.start))))
       if (blocked) throw new Error('A profissional não atende nesse horário. Escolha outro, por favor.')
@@ -195,10 +196,12 @@ export function createDemoDB() {
     },
     async savePhoto({ barberId, clientId, appointmentId, dataUrl, caption, isPrivate = false }) {
       const row = { id: uid(), barberId, clientId, appointmentId, url: dataUrl, caption: caption || '', createdAt: today(), private: !!isPrivate }
-      data.photos.push(row)
-      if (data.photos.length > 80) data.photos = data.photos.slice(-80) // limite do modo demo
+      data.photos.unshift(row)
+      if (data.photos.length > 80) data.photos = data.photos.slice(0, 80) // limite do modo demo
       save(); return clone(row)
     },
+    async backup() { return clone(data) },
+    async deletePhoto(id) { data.photos = data.photos.filter((p) => p.id !== id); save() },
     async bulkImport({ services = [], products = [], clients = [] }) {
       let n = 0
       for (const x of services) { const i = data.services.findIndex((s) => s.name.toLowerCase() === x.name.toLowerCase()); if (i >= 0) data.services[i] = { ...data.services[i], ...x }; else data.services.push({ id: uid(), active: true, order: data.services.length + 1, description: '', ...x }); n++ }

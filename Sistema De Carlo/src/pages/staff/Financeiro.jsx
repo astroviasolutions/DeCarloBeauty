@@ -10,7 +10,7 @@ const shift = (m, n) => { const d = new Date(Number(m.slice(0, 4)), Number(m.sli
 
 export function monthFinance(data, m) {
   const sales = data.sales.filter((s) => s.date.startsWith(m))
-  const services = round2(sum(sales.flatMap((s) => s.items).filter((i) => i.type === 'service'), (i) => i.price * i.qty))
+  const services = round2(sum(sales.flatMap((s) => s.items).filter((i) => i.type === 'service' || i.type === 'extra'), (i) => i.price * i.qty))
   const products = round2(sum(sales.flatMap((s) => s.items).filter((i) => i.type === 'product'), (i) => i.price * i.qty))
   const discounts = round2(sum(sales, (s) => s.discount))
   const salesTotal = round2(sum(sales, (s) => s.total))

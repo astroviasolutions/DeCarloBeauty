@@ -325,6 +325,20 @@ begin
 end $$;
 grant execute on function book_appointment(text,text,text,text[],date,time,int,numeric,text,text,text,jsonb) to anon, authenticated;
 
+-- Agendar cliente já cadastrada pelo painel sem expor o telefone (privacidade ligada)
+create or replace function staff_book_client(p_client_id text, p_barber_id text, p_service_ids text[], p_date date, p_time time,
+  p_duration int, p_total numeric, p_notes text default '') returns text
+language plpgsql security definer set search_path = public as $$
+declare c clients;
+begin
+  if not is_staff() then raise exception 'Sem permissão'; end if;
+  select * into c from clients where id = p_client_id;
+  if not found then raise exception 'Cliente não encontrada'; end if;
+  if length(regexp_replace(c.phone, '\D', '', 'g')) < 10 then raise exception 'Essa cliente está sem WhatsApp no cadastro. Peça para a gestão completar.'; end if;
+  return book_appointment(c.name, c.phone, p_barber_id, p_service_ids, p_date, p_time, p_duration, p_total, 'balcao', coalesce(p_notes, ''), null, null);
+end $$;
+grant execute on function staff_book_client(text,text,text[],date,time,int,numeric,text) to authenticated;
+
 -- Venda (PDV): grava, baixa estoque e conclui o atendimento numa transação
 create or replace function create_sale(p_sale jsonb) returns text
 language plpgsql security definer set search_path = public as $$
@@ -502,6 +516,19 @@ drop policy if exists "expenses_admin" on expenses; create policy "expenses_admi
 -- Storage: fotos do portfólio (bucket público só para leitura)
 insert into storage.buckets (id, name, public) values ('portfolio', 'portfolio', true) on conflict (id) do nothing;
 drop policy if exists "portfolio_read" on storage.objects;  create policy "portfolio_read" on storage.objects for select using (bucket_id = 'portfolio');
+-- excluir foto: a dona exclui qualquer uma; a profissional só as dela (pasta = id dela)
+drop policy if exists "portfolio_delete" on storage.objects; create policy "portfolio_delete" on storage.objects for delete to authenticated
+  using (bucket_id = 'portfolio' and (public.is_admin() or split_part(name, '/', 1) = public.my_barber_id()));
+create or replace function public.delete_photo(p_id text) returns text
+language plpgsql security definer set search_path = public as $$
+declare p photos;
+begin
+  select * into p from photos where id = p_id; if not found then return null; end if;
+  if not (is_admin() or (is_staff() and p.barber_id = my_barber_id())) then raise exception 'Você só pode excluir fotos suas'; end if;
+  delete from photos where id = p_id;
+  return nullif(split_part(p.url, '/portfolio/', 2), '');
+end $$;
+grant execute on function public.delete_photo(text) to authenticated;
 drop policy if exists "portfolio_write" on storage.objects; create policy "portfolio_write" on storage.objects for insert to authenticated with check (bucket_id = 'portfolio' and public.is_staff());
 
 drop policy if exists "ann_read" on announcements;  create policy "ann_read" on announcements for select to authenticated using (is_admin() or (is_staff() and (audience = 'all' or audience = my_barber_id())));

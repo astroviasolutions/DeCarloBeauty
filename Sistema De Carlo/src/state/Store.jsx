@@ -80,6 +80,8 @@ export function StoreProvider({ children }) {
     reviewTarget: (id) => db.reviewTarget(id),
     submitReview: async (r) => { await db.submitReview(r); if (session) await refresh(); else await loadPublic() },
     savePhoto: (p) => run(() => db.savePhoto(p), 'Foto salva no portfólio', 'full'),
+    backup: () => db.backup(),
+    deletePhoto: (id) => run(() => db.deletePhoto(id), 'Foto excluída', 'full'),
     bulkImport: (x) => run(() => db.bulkImport(x), undefined, 'full'),
     notify,
     /** confirmação dentro da página (sem window.confirm) */

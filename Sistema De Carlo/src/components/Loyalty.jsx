@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Camera, Check, Crown, Gift, ImagePlus, Star } from 'lucide-react'
+import { Camera, Check, Crown, Gift, ImagePlus, Star, Trash2 } from 'lucide-react'
 import { useStore } from '../state/Store'
 import { Button, Field, Modal, Price } from './ui'
 import { cls, fmtDate, maskPhone, money, onlyDigits, waLink } from '../lib/utils'
@@ -133,13 +133,13 @@ export function WaitlistModal({ open, onClose, date, barberId, serviceIds, me, b
 
 /** Portfólio de antes e depois dentro da ficha da cliente (com envio de foto) */
 export function ClientPortfolio({ client, barberId }) {
-  const { data, actions } = useStore()
+  const { data, actions, session } = useStore()
   const [open, setOpen] = useState(null)
   const [busy, setBusy] = useState(false)
   const [who, setWho] = useState(barberId || data.barbers.find((b) => b.active)?.id || '')
   const [caption, setCaption] = useState('')
   const [pub, setPub] = useState(false)
-  const list = data.photos.filter((p) => p.clientId === client.id).slice().reverse()
+  const list = data.photos.filter((p) => p.clientId === client.id)
   const add = async (e) => {
     const f = e.target.files?.[0]
     e.target.value = ''
@@ -176,6 +176,9 @@ export function ClientPortfolio({ client, barberId }) {
         <Modal open onClose={() => setOpen(null)} title={open.caption || 'Foto'} wide>
           <img src={open.url} alt={open.caption || 'Foto do portfólio'} className="photo-full" />
           <p className="muted small mt-sm">{fmtDate(open.createdAt)} · {data.barbers.find((b) => b.id === open.barberId)?.name}</p>
+          {(session?.role === 'admin' || open.barberId === session?.barberId) && (
+            <Button variant="ghost" size="sm" className="mt-sm" icon={Trash2} onClick={async () => { if (await actions.confirm('Excluir esta foto do portfólio? Ela some da ficha e do site.', 'Excluir')) { await actions.deletePhoto(open.id); setOpen(null) } }}>Excluir foto</Button>
+          )}
         </Modal>
       )}
     </div>

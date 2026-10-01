@@ -129,6 +129,7 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
     return freeSlots({ date: f.date, hours: data.settings.hours[weekday(f.date)], duration: Number(service.duration), step: Number(data.settings.slotStep || 30), breakTime: barber.lunch || data.settings.breakTime, busy: busy.filter((b) => b.barberId === barber.id && !(edit && f.date === edit.date && b.barberId === edit.barberId && b.time === edit.time)) })
   }, [service, barber, f.date, busy, data.settings, edit])
 
+  const picked = !edit && !!f.clientId
   const match = f.phone.length >= 4 ? data.clients.find((c) => onlyDigits(c.phone).endsWith(onlyDigits(f.phone)) && onlyDigits(f.phone).length >= 10) : null
   const groupTime = (bid, i) => gTimes[bid] || toHHMM(toMin(f.time || '00:00') + Number(service?.duration || 0) + others.slice(0, i).reduce((a, o) => a + totalDuration(f.serviceIds.filter((id) => bOf(id) === o).map(svcOf), data.barbers.find((b) => b.id === o)), 0))
   const groupBad = (bid, i) => { const t = toMin(groupTime(bid, i)); const d = totalDuration(f.serviceIds.filter((id) => bOf(id) === bid).map(svcOf), data.barbers.find((b) => b.id === bid)); return busy.some((x) => x.barberId === bid && t < toMin(x.time) + Number(x.duration) && t + d > toMin(x.time)) }
@@ -139,7 +140,7 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
       if (isAdmin && edit.clientId && (clientName !== edit.clientName || onlyDigits(phone) !== onlyDigits(edit.clientPhone))) await actions.upsert('clients', { id: edit.clientId, name: clientName, phone: onlyDigits(phone) }, null)
       await actions.updateAppointment(edit.id, { clientName, ...(isAdmin ? { clientPhone: onlyDigits(phone) } : {}), notes: f.notes, barberId: f.barberId, serviceIds: mainIds, date: f.date, time: f.time, duration: Number(service.duration), total: Number(service.price) }, 'Agendamento atualizado')
     } else {
-      const r = await actions.staffBook({ clientName, clientPhone: phone, barberId: f.barberId, serviceIds: mainIds, date: f.date, time: f.time, duration: Number(service.duration), total: Number(service.price), notes: f.notes || '' })
+      const r = await actions.staffBook({ clientId: picked ? f.clientId : null, clientName, clientPhone: phone, barberId: f.barberId, serviceIds: mainIds, date: f.date, time: f.time, duration: Number(service.duration), total: Number(service.price), notes: f.notes || '' })
       const catalog = mainIds.reduce((a, id) => a + Number(svcOf(id)?.price || 0), 0)
       if (r?.id && Math.abs(catalog - service.price) > 0.001) await actions.updateAppointment(r.id, { total: Number(service.price) })
     }
@@ -147,10 +148,10 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
     for (const [i, bid] of others.entries()) {
       const ids = f.serviceIds.filter((id) => bOf(id) === bid); const b = data.barbers.find((x) => x.id === bid)
       const total = ids.reduce((a, id) => a + priceOf(id), 0)
-      const r = await actions.staffBook({ clientName, clientPhone: phone, barberId: bid, serviceIds: ids, date: f.date, time: groupTime(bid, i), duration: totalDuration(ids.map(svcOf), b), total, notes: f.notes || '' })
+      const r = await actions.staffBook({ clientId: picked ? f.clientId : null, clientName, clientPhone: phone, barberId: bid, serviceIds: ids, date: f.date, time: groupTime(bid, i), duration: totalDuration(ids.map(svcOf), b), total, notes: f.notes || '' })
       if (r?.id && Math.abs(ids.reduce((a, id) => a + Number(svcOf(id)?.price || 0), 0) - total) > 0.001) await actions.updateAppointment(r.id, { total })
     }
-    if (!edit) setF({ ...f, name: '', phone: '', time: '', notes: '' })
+    if (!edit) setF({ ...f, clientId: null, name: '', phone: '', time: '', notes: '' })
     setAssign({}); setPrices({}); setGTimes({}); onClose()
   }
   const tMin = f.time ? toMin(f.time) : null
@@ -178,7 +179,7 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
     if (!mainIds.length) return 'Escolha pelo menos um serviço.'
     const no = f.serviceIds.find((id) => !okFor(id)); if (no) return `${data.barbers.find((b) => b.id === bOf(no))?.name.split(' ')[0]} não faz ${svcOf(no)?.name}. Escolha outra profissional para esse serviço.`
     if (!edit && !(f.name || match)) return 'Informe o nome da cliente.'
-    if (!edit && onlyDigits(f.phone).length < 10) return 'Informe o WhatsApp com DDD (ex.: 41 99999-9999).'
+    if (!edit && !picked && onlyDigits(f.phone).length < 10) return 'Informe o WhatsApp com DDD (ex.: 41 99999-9999).'
     if (!f.time) return extra ? 'Digite o horário do encaixe.' : (slots.length ? 'Escolha um horário livre.' : 'Sem horário livre no expediente. Ligue "Encaixe fora do horário" para marcar mesmo assim.')
     const t = toMin(f.time)
     const h = hitAt(t, !extra)
@@ -194,7 +195,7 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
     const gb = others.findIndex(groupBad); if (gb >= 0) return `${data.barbers.find((b) => b.id === others[gb])?.name.split(' ')[0]} já tem atendimento às ${groupTime(others[gb], gb)}. Mude o horário dela.`
     return ''
   })()
-  const valid = (edit ? f.name : (f.name || match) && onlyDigits(f.phone).length >= 10) && mainIds.length > 0 && f.serviceIds.every(okFor) && !others.some(groupBad) && f.time && (slots.includes(f.time) || keep || extraOk) && service && barber
+  const valid = (edit ? f.name : picked || ((f.name || match) && onlyDigits(f.phone).length >= 10)) && mainIds.length > 0 && f.serviceIds.every(okFor) && !others.some(groupBad) && f.time && (slots.includes(f.time) || keep || extraOk) && service && barber
 
   return (
     <Modal open={open} onClose={onClose} title={edit ? 'Editar agendamento' : 'Novo agendamento'} footer={<>{!valid && why && <p className="form-err mb-sm" style={{ width: '100%' }}>{why}</p>}<Button block disabled={!valid} icon={Check} onClick={save}>{edit ? 'Salvar alterações' : 'Agendar'}</Button></>}>
@@ -205,11 +206,13 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
             {cq.trim().length >= 2 && (() => {
               const t = cq.trim().toLowerCase(); const d = onlyDigits(cq)
               const hits = data.clients.filter((c) => c.name.toLowerCase().includes(t) || (d.length >= 3 && onlyDigits(c.phone).includes(d))).slice(0, 6)
-              return <div className="client-hits">{hits.map((c) => <button key={c.id} type="button" onClick={() => { setF({ ...f, name: c.name, phone: onlyDigits(c.phone).startsWith('sem') ? '' : onlyDigits(c.phone) }); setCq('') }}><b>{c.name}</b><small>{fmtPhone(c.phone)}</small></button>)}{!hits.length && <small className="muted">Nenhuma cliente encontrada. Preencha abaixo para cadastrar.</small>}</div>
+              return <div className="client-hits">{hits.map((c) => <button key={c.id} type="button" onClick={() => { setF({ ...f, clientId: c.id, name: c.name, phone: onlyDigits(c.phone).startsWith('sem') ? '' : onlyDigits(c.phone) }); setCq('') }}><b>{c.name}</b><small>{onlyDigits(c.phone).length >= 10 ? fmtPhone(c.phone) : 'WhatsApp oculto'}</small></button>)}{!hits.length && <small className="muted">Nenhuma cliente encontrada. Preencha abaixo para cadastrar.</small>}</div>
             })()}
           </Field>
         )}
-        {!edit && <Field label="WhatsApp do cliente" required><input inputMode="tel" value={maskPhone(f.phone)} onChange={(e) => setF({ ...f, phone: onlyDigits(e.target.value) })} placeholder="(41) 99999-9999" /></Field>}
+        {!edit && (picked
+          ? <Field label="Cliente cadastrada"><div className="picked-client"><b>{f.name}</b><small>{onlyDigits(f.phone).length >= 10 ? maskPhone(f.phone) : 'WhatsApp oculto pela privacidade'}</small><button type="button" className="link-btn" onClick={() => setF({ ...f, clientId: null, name: '', phone: '' })}>Trocar</button></div></Field>
+          : <Field label="WhatsApp do cliente" required><input inputMode="tel" value={maskPhone(f.phone)} onChange={(e) => setF({ ...f, phone: onlyDigits(e.target.value) })} placeholder="(41) 99999-9999" /></Field>)}
         <Field label="Nome" required hint={match && !edit ? `Cliente encontrado: ${match.name}` : ''}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={match?.name || 'Nome do cliente'} /></Field>
         <Field label={`Serviços${service ? ` · ${money(service.price)} · ${service.duration} min` : ''}`} required className="span-2">
           <div className="days">

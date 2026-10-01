@@ -1680,3 +1680,25 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .btn-glass { white-space: nowrap; }
 .cal-room { position: absolute; left: 4px; right: 4px; z-index: 1; pointer-events: none; border-radius: 6px; border: 1px dashed var(--red); background: repeating-linear-gradient(135deg, transparent 0 6px, var(--hatch) 6px 12px); padding: 4px 8px; }
 .cal-room small { font-size: 11px; color: var(--red); font-weight: 600; }
+
+/* cliente escolhida no novo agendamento (telefone pode estar oculto) */
+.picked-client { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface-2); }
+.picked-client small { color: var(--muted); flex: 1; min-width: 0; }
+.link-btn { background: none; border: 0; color: var(--red); font-weight: 600; text-decoration: underline; cursor: pointer; padding: 0; font: inherit; font-size: 13px; }
+
+/* telas estreitas (celulares pequenos, zoom de tela ou fonte grande) */
+@media (max-width: 400px) {
+  .stat { min-width: 0; padding: 14px; }
+  .stat-label { letter-spacing: .04em; overflow-wrap: anywhere; }
+  .stat-value { font-size: clamp(18px, 6.2vw, 26px); overflow-wrap: anywhere; }
+  .stepper li { font-size: 11px; letter-spacing: .02em; gap: 5px; min-width: 0; }
+  .stepper li span { width: 20px; height: 20px; flex: none; font-size: 11px; }
+  .bottom-nav a, .bottom-nav button { min-width: 0; font-size: 9px; letter-spacing: 0; }
+  .bottom-nav a span, .bottom-nav button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+}
+@media (max-width: 340px) {
+  .stats { grid-template-columns: 1fr; }
+  .stepper li { font-size: 0; }
+  .stepper li span { font-size: 11px; }
+  .bottom-nav a span, .bottom-nav button span { display: none; }
+}

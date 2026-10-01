@@ -6,6 +6,7 @@ import { disablePush, enablePush, pushStatus, sendTestPush } from '../../lib/pus
 import { NOTIFY_DEFAULTS } from '../../components/Notifier'
 import { Link } from 'react-router-dom'
 import Importer from '../../components/Importer'
+import Backup from '../../components/Backup'
 import { useStore } from '../../state/Store'
 import { Button, Card, Field } from '../../components/ui'
 import { maskPhone, onlyDigits, WEEKDAYS } from '../../lib/utils'
@@ -22,6 +23,8 @@ export default function Config() {
   const notify = { ...NOTIFY_DEFAULTS, ...(s.notify || {}) }
   const setNotify = (k, v) => setS({ ...s, notify: { ...notify, [k]: v } })
   const privacy = { hideContacts: true, ...(s.privacy || {}) }
+  const rules = { extraMode: 'avg', extraRate: 50, discountReduces: true, ...(privacy.commission || {}) }
+  const setRule = (k, v) => setS({ ...s, privacy: { ...privacy, commission: { ...rules, [k]: v } } })
   const page = s.page || {}
   const setPage = (k, v) => setS({ ...s, page: { ...page, [k]: v } })
 
@@ -85,6 +88,7 @@ export default function Config() {
           </div>
         </Card>
         <Card title="Importar planilha"><Importer /></Card>
+        <Card title="Backup dos dados"><Backup /></Card>
       </div>
       <div className="grid-2 mt">
         <Card title="Mensagens do WhatsApp">
@@ -122,6 +126,19 @@ export default function Config() {
               {data.barbers.filter((b) => b.active).map((b) => { const on = (privacy.billingAllowed || []).includes(b.id); return <button key={b.id} type="button" className={`pill ${on ? 'on' : ''}`} onClick={() => setS({ ...s, privacy: { ...privacy, billingAllowed: on ? privacy.billingAllowed.filter((x) => x !== b.id) : [...(privacy.billingAllowed || []), b.id] } })}>{b.name.split(' ')[0]}</button> })}
             </div>
             <p className="muted small mt-sm">Cada profissional vê só a própria agenda, o próprio extrato e os avisos dela.</p>
+          </Card>
+          <Card title="Regras de comissão">
+            <p className="muted small mb-sm">A % de cada atendimento segue esta ordem: 1) % do procedimento para aquela profissional (Equipe → Editar → Procedimentos); 2) % geral da profissional (Equipe); 3) % do procedimento no Catálogo.</p>
+            <Field label="Adicional cobrado no caixa">
+              <select value={rules.extraMode} onChange={(e) => setRule('extraMode', e.target.value)}>
+                <option value="avg">Mesma % dos serviços da venda</option>
+                <option value="fixed">Uma % fixa</option>
+                <option value="none">Sem comissão (fica para a clínica)</option>
+              </select>
+            </Field>
+            {rules.extraMode === 'fixed' && <Field label="% do adicional"><input inputMode="decimal" value={rules.extraRate} onChange={(e) => setRule('extraRate', e.target.value.replace(',', '.'))} /></Field>}
+            <label className="toggle-row"><span><b>Desconto reduz a comissão</b><small>Ligado: a profissional recebe sobre o valor cobrado. Desligado: recebe sobre o preço cheio e a clínica absorve o desconto.</small></span><span className="switch"><input type="checkbox" checked={rules.discountReduces !== false} onChange={(e) => setRule('discountReduces', e.target.checked)} /><span /></span></label>
+            <p className="muted small mt-sm">Vale para as próximas cobranças. As já lançadas não mudam.</p>
           </Card>
         </div>
       </div>

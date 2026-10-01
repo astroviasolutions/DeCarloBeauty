@@ -97,9 +97,11 @@ export default function Checkout({ appointment, presetBarberId, lockBarber, onDo
   const total = round2(subtotal - disc)
   // Clube e Runas: a casa banca, o barbeiro recebe a comissão cheia
   const commissionBase = Math.min(subtotal, manual + (benefit?.reduces ? benefitAmt : 0))
-  const priced = useMemo(() => applyDiscount(priceItems(items, { services, products, barber }), commissionBase), [items, services, products, barber, commissionBase])
+  const rules = data.settings.privacy?.commission || {} // Ajustes → Regras de comissão
+  const discBase = rules.discountReduces === false ? 0 : commissionBase
+  const priced = useMemo(() => applyDiscount(priceItems(items, { services, products, barber }), discBase), [items, services, products, barber, discBase])
   // adicional entra como um item, com a mesma comissão dos serviços da venda
-  const extraRate = (() => { const sv = priced.filter((x) => x.type === 'service'); return sv.length ? sv.reduce((a, x) => a + Number(x.commissionRate || 0), 0) / sv.length : Number(barber?.serviceRate ?? 50) })()
+  const extraRate = rules.extraMode === 'none' ? 0 : rules.extraMode === 'fixed' ? Number(rules.extraRate || 0) : (() => { const sv = priced.filter((x) => x.type === 'service'); return sv.length ? sv.reduce((a, x) => a + Number(x.commissionRate || 0), 0) / sv.length : Number(barber?.serviceRate ?? 50) })()
   const pricedAll = extraAmt > 0 ? [...priced, { type: 'extra', refId: null, name: extraNote.trim() ? `Adicional: ${extraNote.trim()}` : 'Adicional', price: extraAmt, qty: 1, commissionRate: round2(extraRate), commission: round2(extraAmt * extraRate / 100) }] : priced
   const commission = round2(pricedAll.reduce((a, x) => a + x.commission, 0))
 

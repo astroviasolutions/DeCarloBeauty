@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CalendarOff, ChevronLeft, ChevronRight, Plus, Search } from 'lucide-react'
 import { useStore } from '../../state/Store'
 import { Avatar, Badge, Button, Card, Empty, Segmented, Stat, StatusBadge } from '../../components/ui'
@@ -125,8 +125,22 @@ export default function Agenda({ onlyBarberId }) {
 }
 
 /* ---------- Dia: grade por profissional (clique no horário vazio agenda) ---------- */
+const normRoom = (r) => (r || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
 function DayGrid({ date, barbers, appts, onPick, onBook, onBlock }) {
-  const { data } = useStore()
+  const { data, actions, session } = useStore()
+  // sala dividida: a gestão vê os agendamentos das outras; a profissional não vê, então usa os horários ocupados do banco
+  const [busy, setBusy] = useState([])
+  const shared = barbers.some((b) => b.room)
+  useEffect(() => { if (shared) actions.busy(date).then(setBusy).catch(() => setBusy([])) }, [date, shared, data.appointments, actions])
+  const roomMarks = (b) => {
+    if (!b.room) return []
+    if (session?.role === 'admin') {
+      return data.appointments.filter((a) => a.date === date && a.barberId !== b.id && !['cancelado', 'faltou'].includes(a.status) && normRoom(data.barbers.find((x) => x.id === a.barberId)?.room) === normRoom(b.room) && a.serviceIds.some((id) => !data.services.find((s) => s.id === id)?.noRoom))
+        .map((a) => ({ key: a.id, time: a.time, duration: a.duration, who: data.barbers.find((x) => x.id === a.barberId)?.name.split(' ')[0] }))
+    }
+    const mine = (x) => data.appointments.some((a) => a.barberId === b.id && a.date === date && a.time === x.time && !['cancelado', 'faltou'].includes(a.status)) || data.blocks.some((k) => k.barberId === b.id && k.date === date && (k.start || '00:00').slice(0, 5) === x.time)
+    return busy.filter((x) => x.barberId === b.id && Number(x.duration) < 1440 && !mine(x)).map((x, i) => ({ key: `b${i}`, time: x.time, duration: x.duration, who: '' }))
+  }
   const hours = data.settings.hours[weekday(date)] || ['09:00', '19:00']
   const step = Number(data.settings.slotStep || 30)
   // a grade cresce para mostrar encaixes fora do horário (ex.: bem cedo)
@@ -173,8 +187,8 @@ function DayGrid({ date, barbers, appts, onPick, onBook, onBlock }) {
                   const en = x.end ? toMin(x.end) : close
                   return <button key={x.id} type="button" className="cal-block" style={{ top: (st - open) * PX_PER_MIN, height: (en - st) * PX_PER_MIN }} onClick={() => onBlock?.(x)} title="Editar ou excluir bloqueio"><b>{x.reason}</b><small>{x.start ? `${x.start}–${x.end}` : 'Dia inteiro'} · editar</small></button>
                 })}
-                {b.room && data.appointments.filter((a) => a.date === date && a.barberId !== b.id && !['cancelado', 'faltou'].includes(a.status) && data.barbers.find((x) => x.id === a.barberId)?.room?.trim().toLowerCase() === b.room.trim().toLowerCase() && a.serviceIds.some((id) => !data.services.find((s) => s.id === id)?.noRoom)).map((a) => (
-                  <div key={`room-${a.id}`} className="cal-room" style={{ top: (toMin(a.time) - open) * PX_PER_MIN, height: a.duration * PX_PER_MIN }}><small>{b.room} ocupada · com {data.barbers.find((x) => x.id === a.barberId)?.name.split(' ')[0]}</small></div>
+                {roomMarks(b).map((m) => (
+                  <div key={`room-${m.key}`} className="cal-room" style={{ top: (toMin(m.time) - open) * PX_PER_MIN, height: m.duration * PX_PER_MIN }}><small>{b.room} ocupada{m.who ? ` · com ${m.who}` : ''}</small></div>
                 ))}
                 {!off && (b.lunch || data.settings.breakTime) && (() => { const [ls, le] = b.lunch || data.settings.breakTime; return <div className="cal-lunch" style={{ top: (toMin(ls) - open) * PX_PER_MIN, height: (toMin(le) - toMin(ls)) * PX_PER_MIN }}><small>Almoço {ls}–{le}</small></div> })()}
                 {appts.filter((a) => a.barberId === b.id).map((a) => (

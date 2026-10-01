@@ -318,7 +318,7 @@ export function Equipe() {
   const linked = (id) => data.staff?.find((x) => x.barberId === id)?.email || ''
   const save = async () => {
     const { accessEmail: _ae, accessPass: _ap, accessSent: _as, ...clean } = edit
-    const r = { ...clean, serviceOverrides: cleanOverrides(edit.serviceOverrides), goal: Number(edit.goal || 0), serviceRate: edit.serviceRate === '' || edit.serviceRate == null ? null : Number(edit.serviceRate), productRate: edit.productRate === '' || edit.productRate == null ? null : Number(edit.productRate), phone: onlyDigits(edit.phone), room: (edit.room || '').trim() || null }
+    const r = { ...clean, serviceOverrides: cleanOverrides(edit.serviceOverrides), goal: Number(edit.goal || 0), serviceRate: edit.serviceRate === '' || edit.serviceRate == null ? null : Number(edit.serviceRate), productRate: edit.productRate === '' || edit.productRate == null ? null : Number(edit.productRate), phone: onlyDigits(edit.phone), room: (edit.room || '').replace(/\s+/g, ' ').trim() || null }
     if (!isDemo) delete r.pin
     await actions.upsert('barbers', r); setEdit(null)
   }

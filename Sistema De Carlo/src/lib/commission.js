@@ -44,10 +44,11 @@ export function commissionSummary({ sales, payouts, barbers, from, to }) {
     const mine = sales.filter((s) => s.barberId === b.id && s.date >= from && s.date <= to)
     const items = mine.flatMap((s) => s.items)
     const svc = items.filter((i) => i.type === 'service')
+    const ext = items.filter((i) => i.type === 'extra') // adicional cobrado no caixa
     const prd = items.filter((i) => i.type === 'product')
-    const svcValue = svc.reduce((a, i) => a + i.price * i.qty, 0)
+    const svcValue = [...svc, ...ext].reduce((a, i) => a + i.price * i.qty, 0)
     const prdValue = prd.reduce((a, i) => a + i.price * i.qty, 0)
-    const svcComm = mine.reduce((a, s) => a + s.items.filter((i) => i.type === 'service').reduce((x, i) => x + i.commission, 0), 0)
+    const svcComm = mine.reduce((a, s) => a + s.items.filter((i) => i.type === 'service' || i.type === 'extra').reduce((x, i) => x + Number(i.commission || 0), 0), 0)
     const prdComm = mine.reduce((a, s) => a + s.items.filter((i) => i.type === 'product').reduce((x, i) => x + i.commission, 0), 0)
     const total = round2(svcComm + prdComm)
     const paid = round2(payouts.filter((p) => p.barberId === b.id && p.from >= from && p.to <= to).reduce((a, p) => a + p.amount, 0))

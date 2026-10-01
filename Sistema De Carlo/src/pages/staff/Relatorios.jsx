@@ -36,7 +36,7 @@ export default function Relatorios() {
   }
   const revenue = sum(sales, (s) => s.total)
   const items = sales.flatMap((s) => s.items)
-  const svcRev = sum(items.filter((i) => i.type === 'service'), (i) => i.price * i.qty)
+  const svcRev = sum(items.filter((i) => i.type === 'service' || i.type === 'extra'), (i) => i.price * i.qty)
   const prdRev = sum(items.filter((i) => i.type === 'product'), (i) => i.price * i.qty)
   const comm = sum(sales, (s) => s.commissionTotal)
   const past = appts.filter((a) => ['concluido', 'faltou'].includes(a.status))
