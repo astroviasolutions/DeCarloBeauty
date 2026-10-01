@@ -333,6 +333,11 @@ begin
   if not is_staff() then raise exception 'Sem permissão'; end if;
   if not is_admin() and (p_sale->>'barber_id') is distinct from my_barber_id() then raise exception 'Você só pode lançar vendas suas'; end if;
   if not is_admin() and not coalesce((select (privacy->'billingAllowed') ? my_barber_id() from settings where id = 'main'), false) then raise exception 'Cobrança liberada só para a gestão'; end if;
+  -- trava contra cobrança em dobro (duplo toque, dois aparelhos)
+  if nullif(p_sale->>'appointment_id','') is not null then
+    perform pg_advisory_xact_lock(hashtext('sale' || (p_sale->>'appointment_id')));
+    if exists(select 1 from sales where appointment_id = p_sale->>'appointment_id') then raise exception 'Esse atendimento já foi cobrado. Veja em Caixa → Vendas.'; end if;
+  end if;
   insert into sales(date, time, barber_id, client_id, client_name, appointment_id, items, subtotal, discount, total, payment, commission_total, benefit, loyalty_redeemed)
   values (coalesce((p_sale->>'date')::date, current_date), coalesce((p_sale->>'time')::time, localtime), p_sale->>'barber_id',
           nullif(p_sale->>'client_id',''), coalesce(p_sale->>'client_name','Cliente avulso'), nullif(p_sale->>'appointment_id',''),
@@ -364,8 +369,13 @@ begin
   for it in select * from jsonb_array_elements(s.items) loop
     if it->>'type' = 'product' then update products set stock = stock + (it->>'qty')::int where id = it->>'refId'; end if;
   end loop;
-  update appointments set status = 'confirmado', sale_id = null where id = s.appointment_id;
   delete from sales where id = p_id;
+  -- só reabre o atendimento se não sobrou outra venda dele
+  if not exists(select 1 from sales where appointment_id = s.appointment_id) then
+    update appointments set status = 'confirmado', sale_id = null where id = s.appointment_id;
+  else
+    update appointments set sale_id = (select id from sales where appointment_id = s.appointment_id limit 1) where id = s.appointment_id;
+  end if;
 end $$;
 grant execute on function delete_sale(text) to authenticated;
 
