@@ -127,6 +127,18 @@ export default function Config() {
             </div>
             <p className="muted small mt-sm">Cada profissional vê só a própria agenda, o próprio extrato e os avisos dela.</p>
           </Card>
+          <Card title="Agenda sobreposta (tempo de pausa)">
+            <p className="muted small mb-sm">Para quem precisa marcar outra cliente enquanto um procedimento está em pausa (ex.: coloração agindo). Só vale para agendamentos feitos pelo painel; o site das clientes continua sem sobreposição.</p>
+            <div className="toggle-row"><span><b>Quem pode sobrepor</b><small>Toque para liberar (ex.: as profissionais do cabelo).</small></span></div>
+            <div className="days">
+              {data.barbers.filter((b) => b.active).map((b) => { const on = (privacy.overlap?.barbers || []).includes(b.id); return <button key={b.id} type="button" className={`pill ${on ? 'on' : ''}`} onClick={() => setS({ ...s, privacy: { ...privacy, overlap: { max: 2, ...(privacy.overlap || {}), barbers: on ? (privacy.overlap?.barbers || []).filter((x) => x !== b.id) : [...(privacy.overlap?.barbers || []), b.id] } } })}>{b.name.split(' ')[0]}</button> })}
+            </div>
+            <Field label="Atendimentos ao mesmo tempo (máximo)">
+              <select value={privacy.overlap?.max || 2} onChange={(e) => setS({ ...s, privacy: { ...privacy, overlap: { barbers: [], ...(privacy.overlap || {}), max: Number(e.target.value) } } })}>
+                <option value={2}>2 clientes</option><option value={3}>3 clientes</option><option value={4}>4 clientes</option>
+              </select>
+            </Field>
+          </Card>
           <Card title="Regras de comissão">
             <p className="muted small mb-sm">A % de cada atendimento segue esta ordem: 1) % do procedimento para aquela profissional (Equipe → Editar → Procedimentos); 2) % geral da profissional (Equipe); 3) % do procedimento no Catálogo.</p>
             <Field label="Adicional cobrado no caixa">

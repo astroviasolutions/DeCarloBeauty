@@ -268,6 +268,14 @@ language sql stable security definer set search_path = public as $$
 $$;
 grant execute on function get_busy(date) to anon, authenticated;
 
+-- Agenda sobreposta (Ajustes → tempo de pausa): quantos atendimentos ao mesmo tempo.
+-- Só pelo painel (equipe) e só para as profissionais liberadas; o site continua 1.
+create or replace function overlap_cap(p_barber_id text) returns int
+language sql stable security definer set search_path = public as $$
+  select case when is_staff() and coalesce((select (privacy->'overlap'->'barbers') ? p_barber_id from settings where id = 'main'), false)
+    then greatest(2, coalesce((select (privacy->'overlap'->>'max')::int from settings where id = 'main'), 2)) else 1 end
+$$;
+
 -- Agendamento público, com checagem de conflito dentro do banco
 create or replace function book_appointment(
   p_client_name text, p_client_phone text, p_barber_id text, p_service_ids text[],
@@ -293,12 +301,11 @@ begin
   if v_dur = 0 then raise exception 'Serviço inválido'; end if;
 
   perform pg_advisory_xact_lock(hashtext(p_barber_id || p_date::text));
-  if exists(
-    select 1 from appointments a
+  if (select count(*) from appointments a
     where a.barber_id = p_barber_id and a.date = p_date and a.status not in ('cancelado','faltou')
       and p_time < a.time + make_interval(mins => a.duration)
       and p_time + make_interval(mins => v_dur) > a.time
-  ) then raise exception 'Esse horário acabou de ser reservado. Escolha outro, por favor.'; end if;
+  ) >= overlap_cap(p_barber_id) then raise exception 'Esse horário acabou de ser reservado. Escolha outro, por favor.'; end if;
   if exists(
     select 1 from appointments a join barbers b1 on b1.id = a.barber_id join barbers me on me.id = p_barber_id
     where a.barber_id <> p_barber_id and coalesce(trim(me.room), '') <> '' and lower(trim(b1.room)) = lower(trim(me.room))
@@ -570,8 +577,8 @@ begin
       into v_total, v_dur
       from services s cross join (select service_overrides from barbers where id = a.barber_id) b where s.id = any(v_svc);
     if v_dur = 0 then raise exception 'Serviço inválido'; end if;
-    if exists(select 1 from appointments x where x.id <> p_id and x.barber_id = a.barber_id and x.date = v_date and x.status not in ('cancelado','faltou')
-      and v_time < x.time + make_interval(mins => x.duration) and v_time + make_interval(mins => v_dur) > x.time)
+    if (select count(*) from appointments x where x.id <> p_id and x.barber_id = a.barber_id and x.date = v_date and x.status not in ('cancelado','faltou')
+      and v_time < x.time + make_interval(mins => x.duration) and v_time + make_interval(mins => v_dur) > x.time) >= overlap_cap(a.barber_id)
     then raise exception 'Conflito com outro agendamento nesse horário'; end if;
     update appointments set date = v_date, time = v_time, service_ids = v_svc, duration = v_dur, total = v_total where id = p_id;
   end if;

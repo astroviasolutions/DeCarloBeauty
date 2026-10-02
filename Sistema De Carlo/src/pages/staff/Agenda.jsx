@@ -125,6 +125,21 @@ export default function Agenda({ onlyBarberId }) {
 }
 
 /* ---------- Dia: grade por profissional (clique no horário vazio agenda) ---------- */
+/** agendamentos sobrepostos ficam lado a lado na coluna */
+function lanes(list) {
+  const sorted = list.filter((a) => !['cancelado', 'faltou'].includes(a.status)).concat(list.filter((a) => ['cancelado', 'faltou'].includes(a.status))).sort((x, y) => toMin(x.time) - toMin(y.time))
+  const out = []; let group = []; let end = -1
+  const flush = () => { const n = Math.max(1, ...group.map((g) => g.lane + 1)); group.forEach((g) => out.push({ ...g, n })); group = [] }
+  for (const a of sorted) {
+    const s = toMin(a.time), e = s + Number(a.duration)
+    if (s >= end && group.length) flush()
+    const used = group.filter((g) => toMin(g.a.time) + Number(g.a.duration) > s).map((g) => g.lane)
+    let lane = 0; while (used.includes(lane)) lane++
+    group.push({ a, lane }); end = Math.max(end, e)
+  }
+  if (group.length) flush()
+  return out
+}
 const normRoom = (r) => (r || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
 function DayGrid({ date, barbers, appts, onPick, onBook, onBlock }) {
   const { data, actions, session } = useStore()
@@ -191,8 +206,8 @@ function DayGrid({ date, barbers, appts, onPick, onBook, onBlock }) {
                   <div key={`room-${m.key}`} className="cal-room" style={{ top: (toMin(m.time) - open) * PX_PER_MIN, height: m.duration * PX_PER_MIN }}><small>{b.room} ocupada{m.who ? ` · com ${m.who}` : ''}</small></div>
                 ))}
                 {!off && (b.lunch || data.settings.breakTime) && (() => { const [ls, le] = b.lunch || data.settings.breakTime; return <div className="cal-lunch" style={{ top: (toMin(ls) - open) * PX_PER_MIN, height: (toMin(le) - toMin(ls)) * PX_PER_MIN }}><small>Almoço {ls}–{le}</small></div> })()}
-                {appts.filter((a) => a.barberId === b.id).map((a) => (
-                  <button key={a.id} className={cls('cal-ev', `st-${a.status}`, a.duration < 30 && 'short')} style={{ top: (toMin(a.time) - open) * PX_PER_MIN + 1, height: Math.max(26, a.duration * PX_PER_MIN - 3) }} onClick={() => onPick(a)}>
+                {lanes(appts.filter((a) => a.barberId === b.id)).map(({ a, lane, n }) => (
+                  <button key={a.id} className={cls('cal-ev', `st-${a.status}`, a.duration < 30 && 'short')} style={{ top: (toMin(a.time) - open) * PX_PER_MIN + 1, height: Math.max(26, a.duration * PX_PER_MIN - 3), ...(n > 1 ? { left: `calc(${(lane / n) * 100}% + 2px)`, right: 'auto', width: `calc(${100 / n}% - 4px)` } : {}) }} onClick={() => onPick(a)}>
                     <b>{a.status === 'confirmado' ? '✅ ' : ''}{a.time} · {a.clientName.split(' ')[0]}</b>
                     <small>{serviceNames(a, data.services)}</small>
                   </button>

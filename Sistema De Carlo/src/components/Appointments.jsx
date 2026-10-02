@@ -102,6 +102,7 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
   const [busy, setBusy] = useState([])
   const [cq, setCq] = useState('')
   const [extra, setExtra] = useState(false) // encaixe fora do horário (só a equipe vê)
+  const [overlap, setOverlap] = useState(false) // sobrepor horário (tempo de pausa, ex.: tinta agindo)
   useEffect(() => { if (open && !edit) setF((x) => ({ ...x, date: initialDate || x.date, time: initialTime || '', barberId: initialBarber || x.barberId || data.barbers.find((b) => b.active)?.id, serviceIds: x.serviceIds.length ? x.serviceIds : [data.services.find((s) => s.active && doesService(data.barbers.find((b) => b.id === (initialBarber || x.barberId)), s.id))?.id].filter(Boolean) })); if (open && !edit && initialTime) { const h = data.settings.hours?.[weekday(initialDate || today())]; setExtra(!h || toMin(initialTime) < toMin(h[0]) || toMin(initialTime) >= toMin(h[1])) } }, [open, initialDate, initialTime, initialBarber]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (open && f.date) actions.busy(f.date).then(setBusy) }, [open, f.date, actions])
 
@@ -155,16 +156,24 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
     setAssign({}); setPrices({}); setGTimes({}); onClose()
   }
   const tMin = f.time ? toMin(f.time) : null
-  const extraOk = extra && tMin != null && service && !busy.some((b) => b.barberId === barber?.id && !(edit && f.date === edit.date && b.barberId === edit.barberId && b.time === edit.time) && tMin < toMin(b.time) + Number(b.duration) && tMin + Number(service.duration) > toMin(b.time))
+  const ovCfg = data.settings.privacy?.overlap || {}
+  const canOverlap = !!barber && (ovCfg.barbers || []).includes(barber.id)
+  const ovOn = canOverlap && overlap
+  const cap = ovOn ? Math.max(2, Number(ovCfg.max || 2)) : 1
+  const free = extra || ovOn
+  const isBlock = (b) => Number(b.duration) >= 1440 || data.blocks.some((k) => k.barberId === barber?.id && k.date === f.date && (k.start || '00:00').slice(0, 5) === b.time)
+  const clashes = (t, d) => busy.filter((b) => b.barberId === barber?.id && !(edit && f.date === edit.date && b.barberId === edit.barberId && b.time === edit.time) && t < toMin(b.time) + Number(b.duration) && t + d > toMin(b.time))
+  const fits = (t, d) => { const c = clashes(t, d); return c.length < cap && !(c.length && c.some(isBlock)) }
+  const extraOk = free && tMin != null && service && fits(tMin, Number(service.duration))
   const keep = !!edit && f.date === edit.date && f.time === edit.time && f.barberId === edit.barberId && Number(service?.duration) <= Number(edit.duration)
   // por que não dá para agendar + sugestão de horário
   const mine = busy.filter((b) => b.barberId === barber?.id && !(edit && f.date === edit.date && b.barberId === edit.barberId && b.time === edit.time))
   const dur = Number(service?.duration || 0)
   const hrs = data.settings.hours?.[weekday(f.date)]
   const lunch = barber?.lunch || data.settings.breakTime
-  const hitAt = (t, withLunch) => mine.find((b) => t < toMin(b.time) + Number(b.duration) && t + dur > toMin(b.time)) || (withLunch && lunch && t < toMin(lunch[1]) && t + dur > toMin(lunch[0]) ? { lunch: true } : null)
+  const hitAt = (t, withLunch) => (fits(t, dur) ? null : clashes(t, dur)[0]) || (withLunch && lunch && t < toMin(lunch[1]) && t + dur > toMin(lunch[0]) ? { lunch: true } : null)
   const suggest = (t) => {
-    if (!extra) return slots.find((x) => toMin(x) >= t) || slots[slots.length - 1]
+    if (!free) return slots.find((x) => toMin(x) >= t) || slots[slots.length - 1]
     for (let x = t; x + dur <= 23 * 60 + 59; x += 5) if (!hitAt(x, false)) return toHHMM(x)
     return null
   }
@@ -180,14 +189,15 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
     const no = f.serviceIds.find((id) => !okFor(id)); if (no) return `${data.barbers.find((b) => b.id === bOf(no))?.name.split(' ')[0]} não faz ${svcOf(no)?.name}. Escolha outra profissional para esse serviço.`
     if (!edit && !(f.name || match)) return 'Informe o nome da cliente.'
     if (!edit && !picked && onlyDigits(f.phone).length < 10) return 'Informe o WhatsApp com DDD (ex.: 41 99999-9999).'
-    if (!f.time) return extra ? 'Digite o horário do encaixe.' : (slots.length ? 'Escolha um horário livre.' : 'Sem horário livre no expediente. Ligue "Encaixe fora do horário" para marcar mesmo assim.')
+    if (!f.time) return free ? 'Digite o horário.' : (slots.length ? 'Escolha um horário livre.' : 'Sem horário livre no expediente. Ligue "Encaixe fora do horário" para marcar mesmo assim.')
     const t = toMin(f.time)
-    const h = hitAt(t, !extra)
+    const h = hitAt(t, !free)
     const sug = suggest(t)
-    const tip = sug && sug !== f.time ? ` Minha sugestão: encaixar às ${sug}.` : ''
+    const tip = (sug && sug !== f.time ? ` Minha sugestão: encaixar às ${sug}.` : '') + (canOverlap && !ovOn ? ' Se a cliente estiver em pausa (ex.: tinta agindo), ligue "Sobrepor horário".' : '')
     if (h?.lunch) return `${f.time} cai no almoço dela (${lunch[0]}–${lunch[1]}).${tip} Ou ligue "Encaixe fora do horário".`
+    if (h && ovOn && !isBlock(h)) return `Já tem ${clashes(t, dur).length} atendimento(s) nesse horário. O limite de sobreposição é ${cap}.${tip}`
     if (h) { const m = whoAt(h); return `${m[0].toUpperCase()}${m.slice(1)}, e o atendimento leva ${dur} min.${tip}` }
-    if (!extra && !slots.includes(f.time) && !keep) {
+    if (!free && !slots.includes(f.time) && !keep) {
       if (barber.daysOff?.includes(weekday(f.date)) || !hrs) return 'Esse dia é folga/fechado. Ligue "Encaixe fora do horário" para marcar mesmo assim.'
       if (t < toMin(hrs[0]) || t + dur > toMin(hrs[1])) return `${f.time} + ${dur} min passa do horário de funcionamento (${hrs[0]}–${hrs[1]}). Ligue "Encaixe fora do horário" para marcar mesmo assim.`
       return `${f.time} não cabe na grade.${tip}`
@@ -255,12 +265,13 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
         )}
       </div>
       <label className="toggle-row mb-sm"><span><b>Encaixe fora do horário</b><small>Ex.: bem cedo ou depois de fechar. Só a equipe vê; a cliente não consegue marcar nesses horários pelo site.</small></span><span className="switch"><input type="checkbox" checked={extra} onChange={(e) => setExtra(e.target.checked)} /><span /></span></label>
-      {extra && (
-        <Field label="Horário do encaixe" required >
+      {canOverlap && <label className="toggle-row mb-sm"><span><b>Sobrepor horário (tempo de pausa)</b><small>Ex.: enquanto a tinta age, marque outra cliente no mesmo horário. Até {Math.max(2, Number(ovCfg.max || 2))} atendimentos ao mesmo tempo. Só a equipe usa; o site continua normal.</small></span><span className="switch"><input type="checkbox" checked={overlap} onChange={(e) => setOverlap(e.target.checked)} /><span /></span></label>}
+      {free && (
+        <Field label={ovOn ? 'Horário (pode sobrepor)' : 'Horário do encaixe'} required >
           <input type="time" value={f.time} onChange={(e) => setF({ ...f, time: e.target.value })} />
         </Field>
       )}
-      {!extra && <Field label="Horário livre" required>
+      {!free && <Field label="Horário livre" required>
         {keep && <p className="muted small">Mantendo {f.time}. Para mudar, escolha outro horário abaixo.</p>}
         {f.time && !keep && !slots.includes(f.time) && <p className="form-err">{why || `O horário ${f.time} não está na grade.`}</p>}
         {slots.length ? (

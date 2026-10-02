@@ -95,7 +95,9 @@ export function createDemoDB() {
 
     async book(p) {
       if (p.clientId && onlyDigits(p.clientPhone).length < 10) { const c = data.clients.find((x) => x.id === p.clientId); if (c) p = { ...p, clientName: c.name, clientPhone: c.phone } }
-      if (overlaps(p.barberId, p.date, p.time, p.duration)) throw new Error('Esse horário acabou de ser reservado. Escolha outro, por favor.')
+      const ov = data.settings.privacy?.overlap || {}
+      const capN = p.source === 'balcao' && (ov.barbers || []).includes(p.barberId) ? Math.max(2, Number(ov.max || 2)) : 1
+      if (data.appointments.filter((a) => a.barberId === p.barberId && a.date === p.date && !['cancelado', 'faltou'].includes(a.status) && toMin(p.time) < toMin(a.time) + Number(a.duration) && toMin(p.time) + Number(p.duration) > toMin(a.time)).length >= capN) throw new Error('Esse horário acabou de ser reservado. Escolha outro, por favor.')
       const blocked = data.blocks.some((b) => b.barberId === p.barberId && b.date === p.date && (!b.start || (toMin(p.time) < toMin(b.end) && toMin(p.time) + Number(p.duration) > toMin(b.start))))
       if (blocked) throw new Error('A profissional não atende nesse horário. Escolha outro, por favor.')
       const c = upsertClient({ name: p.clientName, phone: p.clientPhone, birthday: p.birthday })
