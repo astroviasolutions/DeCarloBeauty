@@ -362,3 +362,22 @@ html, body { max-width: 100%; overflow-x: clip; }
   html.v2[data-bb-theme] .agenda-bar .search { flex: 1 1 0; min-width: 0; order: 5; }
   html.v2[data-bb-theme] .agenda-bar .agenda-select { flex: 0 0 132px; min-width: 0; order: 6; }
 }
+
+/* ===== Fundo da tela: degradê vertical nas cores da marca (atrás de tudo) ===== */
+html.v2 { background: var(--v-bg-mid); }
+html.v2 body { background: transparent !important; }
+html.v2 body::before {
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(70% 38% at 12% 0%, var(--v-bg-top) 0%, transparent 100%),
+    linear-gradient(180deg, var(--v-bg-top) 0%, var(--v-bg-mid) 34%, var(--v-bg-mid) 62%, var(--v-bg-bot) 100%);
+}
+html.v2[data-bb-theme] .hero-art::before, html.v2[data-bb-theme] .hero-art::after { display: none !important; }
+html.v2[data-bb-theme] .hero-art, html.v2[data-bb-theme] .hero, html.v2[data-bb-theme] .site { background-color: transparent !important; background-image: none !important; }
+/* cartões em vidro claro sobre o degradê, como no exemplo */
+html.v2[data-bb-theme] :is(.card, .info-card, .stat:not(.stat-accent), .team-card, .sel-card, .portal-appt, .login-card, .plan, .mt-ev, .mt-day:not(.on), .mt-pro:not(.on)) {
+  background: color-mix(in srgb, var(--v-surface) 72%, transparent); border-color: color-mix(in srgb, var(--v-surface) 80%, transparent);
+  backdrop-filter: blur(18px) saturate(1.2); -webkit-backdrop-filter: blur(18px) saturate(1.2);
+}
+html.v2[data-bb-theme] .topbar { background: color-mix(in srgb, var(--v-bg-top) 55%, transparent); }
+html.v2[data-bb-theme="dark"] :is(.card, .info-card, .stat:not(.stat-accent), .team-card, .sel-card, .portal-appt, .login-card, .plan, .mt-ev) { background: color-mix(in srgb, var(--v-surface) 78%, transparent); border-color: var(--v-line); }
