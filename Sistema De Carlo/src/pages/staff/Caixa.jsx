@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Lock, RotateCcw, Unlock, Receipt } from 'lucide-react'
+import { Lock, Pencil, RotateCcw, Unlock, Receipt } from 'lucide-react'
 import { useStore } from '../../state/Store'
 import { Button, Card, Empty, Field, Modal } from '../../components/ui'
 import Checkout from '../../components/Checkout'
 import { AppointmentModal, ApptRow } from '../../components/Appointments'
-import { money, PAYMENTS, sum, today, canCharge } from '../../lib/utils'
+import { money, PAYMENTS, sum, today, canCharge, fmtDate } from '../../lib/utils'
+import { adjustSale } from '../../lib/commission'
 
 export default function Caixa() {
   const { data, session } = useStore()
@@ -21,9 +22,11 @@ function CaixaInner() {
   const [opening, setOpening] = useState('150')
   const [k, setK] = useState(0)
   const t = today()
+  const [day, setDay] = useState(t)
+  const [adj, setAdj] = useState(null)
 
   const session0 = data.cash.find((c) => !c.closedAt)
-  const salesToday = data.sales.filter((s) => s.date === t && (isAdmin || s.barberId === session.barberId)).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+  const salesToday = data.sales.filter((s) => s.date === (isAdmin ? day : t) && (isAdmin || s.barberId === session.barberId)).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
   const byPay = Object.keys(PAYMENTS).map((p) => ({ p, v: sum(salesToday.filter((s) => s.payment === p), (s) => s.total) }))
   const cashIn = byPay.find((x) => x.p === 'dinheiro').v
   const toCharge = data.appointments.filter((a) => a.date === t && ['agendado', 'confirmado'].includes(a.status) && (isAdmin || a.barberId === session.barberId)).sort((a, b) => a.time.localeCompare(b.time))
@@ -69,7 +72,7 @@ function CaixaInner() {
       <Checkout key={k} presetBarberId={isAdmin ? undefined : session.barberId} lockBarber={!isAdmin} onDone={() => setK(k + 1)} />
 
       <div className="grid-2 mt-lg">
-        <Card title={`Vendas de hoje · ${money(sum(salesToday, (s) => s.total))}`} pad={false}>
+        <Card title={`Vendas ${day === t ? 'de hoje' : `de ${fmtDate(day)}`} · ${money(sum(salesToday, (s) => s.total))}`} pad={false} action={isAdmin ? <input type="date" className="mini-input" value={day} max={t} onChange={(e) => e.target.value && setDay(e.target.value)} aria-label="Dia das vendas" /> : null}>
           {salesToday.length ? (
             <div className="list">
               {salesToday.map((s) => {
@@ -79,12 +82,13 @@ function CaixaInner() {
                     <span className="appt-time">{s.time}</span>
                     <span className="appt-info"><b>{s.clientName}</b><small>{s.items.map((i) => `${i.qty > 1 ? i.qty + 'x ' : ''}${i.name}`).join(', ')} · {b?.name.split(' ')[0]} · {PAYMENTS[s.payment]}</small></span>
                     <b>{money(s.total)}</b>
+                    {isAdmin && <button className="icon-btn sm" title="Ajustar valor ou desconto" onClick={() => setAdj({ s, final: String(s.total).replace('.', ','), payment: s.payment })}><Pencil size={15} /></button>}
                     {isAdmin && <button className="icon-btn sm" title="Estornar venda" onClick={async () => (await actions.confirm(`Estornar a venda de ${money(s.total)} para ${s.clientName}? O estoque volta e a comissão é removida.`, 'Estornar')) && actions.deleteSale(s.id)}><RotateCcw size={15} /></button>}
                   </div>
                 )
               })}
             </div>
-          ) : <Empty icon={Receipt} title="Nenhuma venda ainda hoje" text="As vendas finalizadas aparecem aqui." />}
+          ) : <Empty icon={Receipt} title={day === t ? 'Nenhuma venda ainda hoje' : 'Nenhuma venda neste dia'} text="As vendas finalizadas aparecem aqui." />}
         </Card>
         <Card title="Entradas por forma de pagamento">
           <div className="pay-sum">
@@ -105,6 +109,27 @@ function CaixaInner() {
           <input inputMode="decimal" value={counted} onChange={(e) => setCounted(e.target.value)} placeholder="0,00" />
         </Field>
       </Modal>
+      {adj && (() => {
+        const subtotal = adj.s.items.reduce((a, x) => a + Number(x.price) * Number(x.qty), 0)
+        const final = Number(String(adj.final).replace(/\./g, '').replace(',', '.')) || 0
+        const r = adjustSale(adj.s, subtotal - final, data.settings.privacy?.commission || {})
+        const b = data.barbers.find((x) => x.id === adj.s.barberId)
+        return (
+          <Modal open onClose={() => setAdj(null)} title="Ajustar venda" footer={<Button block disabled={final <= 0 || final > subtotal} onClick={async () => { await actions.adjustSale(adj.s.id, r, adj.payment); setAdj(null) }}>Salvar ajuste</Button>}>
+            <p className="muted small">{adj.s.clientName} · {fmtDate(adj.s.date)} {adj.s.time} · {adj.s.items.map((i) => i.name).join(', ')}</p>
+            <div className="form-grid">
+              <Field label="Valor cheio"><input value={money(subtotal)} disabled /></Field>
+              <Field label="Valor que a cliente pagou (R$)" hint="O desconto é calculado sozinho"><input inputMode="decimal" autoFocus value={adj.final} onChange={(e) => setAdj({ ...adj, final: e.target.value.replace(/[^\d,.]/g, '') })} /></Field>
+              <Field label="Forma de pagamento" className="span-2"><select value={adj.payment} onChange={(e) => setAdj({ ...adj, payment: e.target.value })}>{Object.entries(PAYMENTS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+            </div>
+            <div className="ov-box mt">
+              <p>Desconto: <b>{money(r.discount)}</b> · Total: <b>{money(r.total)}</b></p>
+              <p>Comissão de {b?.name.split(' ')[0]}: <s className="muted">{money(adj.s.commissionTotal)}</s> → <b>{money(r.commissionTotal)}</b></p>
+              <p className="muted small">O financeiro, as comissões e o relatório já usam o valor novo. Se a comissão já foi paga, confira o acerto dela.</p>
+            </div>
+          </Modal>
+        )
+      })()}
     </div>
   )
 }

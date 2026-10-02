@@ -381,3 +381,11 @@ html.v2[data-bb-theme] :is(.card, .info-card, .stat:not(.stat-accent), .team-car
 }
 html.v2[data-bb-theme] .topbar { background: color-mix(in srgb, var(--v-bg-top) 55%, transparent); }
 html.v2[data-bb-theme="dark"] :is(.card, .info-card, .stat:not(.stat-accent), .team-card, .sel-card, .portal-appt, .login-card, .plan, .mt-ev) { background: color-mix(in srgb, var(--v-surface) 78%, transparent); border-color: var(--v-line); }
+
+/* ===== Detalhe do agendamento: o que foi cobrado ===== */
+html.v2[data-bb-theme] .appt-charged { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 4px; padding: 12px 14px; border-radius: 18px; background: var(--v-surface2); border: 1px solid var(--v-line); font-size: 14px; }
+html.v2[data-bb-theme] .appt-charged > b { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--v-muted); }
+html.v2[data-bb-theme] .appt-charged span { display: flex; justify-content: space-between; gap: 10px; }
+html.v2[data-bb-theme] .appt-charged em { font-style: normal; color: var(--v-text); }
+html.v2[data-bb-theme] .appt-charged i { font-style: normal; font-weight: 700; font-variant-numeric: tabular-nums; }
+html.v2[data-bb-theme] .appt-charged .tot { border-top: 1px dashed var(--v-line); padding-top: 7px; margin-top: 2px; font-weight: 800; }

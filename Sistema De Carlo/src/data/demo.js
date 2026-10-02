@@ -138,7 +138,7 @@ export function createDemoDB() {
       data.sales.push(s)
       if (s.appointmentId) {
         const a = data.appointments.find((x) => x.id === s.appointmentId)
-        if (a) { a.status = 'concluido'; a.saleId = s.id }
+        if (a) { a.status = 'concluido'; a.saleId = s.id; a.total = s.total }
       }
       for (const it of s.items) if (it.type === 'product') {
         const p = data.products.find((x) => x.id === it.refId)
@@ -147,6 +147,12 @@ export function createDemoDB() {
       save(); return clone(s)
     },
 
+    async adjustSale(id, a, payment) {
+      const s = data.sales.find((x) => x.id === id); if (!s) return
+      Object.assign(s, { items: a.items, discount: a.discount, total: a.total, commissionTotal: a.commissionTotal, payment: payment || s.payment })
+      if (s.appointmentId) { const ap = data.appointments.find((x) => x.id === s.appointmentId); if (ap) ap.total = a.total }
+      save()
+    },
     async deleteSale(id) {
       const s = data.sales.find((x) => x.id === id)
       if (!s) return

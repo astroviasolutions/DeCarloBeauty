@@ -5,7 +5,7 @@ import { Avatar, Button, Field, Segmented } from './ui'
 import { applyDiscount, priceItems } from '../lib/commission'
 import { clubOf, isBirthdayMonth, loyaltyOf } from '../lib/loyalty'
 import { compressImage } from '../lib/image'
-import { cls, fmtPhone, maskPhone, money, onlyDigits, round2, today, nowMin, toHHMM, waLink } from '../lib/utils'
+import { cls, fmtPhone, maskPhone, money, onlyDigits, round2, today, nowMin, toHHMM, waLink , parseMoney } from '../lib/utils'
 import { msg as fillMsg } from '../lib/messages'
 
 const PAY = [
@@ -63,7 +63,7 @@ export default function Checkout({ appointment, presetBarberId, lockBarber, onDo
   const setQty = (i, d) => setItems((list) => list.map((it, j) => (j === i ? { ...it, qty: Math.max(1, it.qty + d) } : it)))
   const del = (i) => setItems((list) => list.filter((_, j) => j !== i))
 
-  const extraAmt = Math.max(0, Number(String(extra).replace(',', '.')) || 0)
+  const extraAmt = parseMoney(extra)
   const subtotal = round2(items.reduce((a, x) => a + x.price * x.qty, 0) + extraAmt)
   const svcTotal = round2(items.filter((x) => x.type === 'service').reduce((a, x) => a + x.price * x.qty, 0))
 
@@ -91,7 +91,7 @@ export default function Checkout({ appointment, presetBarberId, lockBarber, onDo
   }, [appointment, client, data, items, svcTotal, services, clients])
   const benefit = benefits.find((b) => b.kind === benefitKind) || null
 
-  const manual = Number(String(discount).replace(',', '.')) || 0
+  const manual = parseMoney(discount, subtotal)
   const benefitAmt = benefit ? Math.min(benefit.amount, subtotal) : 0
   const disc = Math.min(subtotal, manual + benefitAmt)
   const total = round2(subtotal - disc)
@@ -253,7 +253,8 @@ export default function Checkout({ appointment, presetBarberId, lockBarber, onDo
           {benefit && <div className="ben-line"><span>{benefit.label}</span><span>-{money(benefitAmt)}</span></div>}
           <div className="disc"><span>Adicional (R$)</span><input inputMode="decimal" value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="0,00" /></div>
           {extraAmt > 0 && <div className="disc"><span>Motivo do adicional</span><input value={extraNote} onChange={(e) => setExtraNote(e.target.value)} placeholder="Ex.: cabelo longo, material extra" /></div>}
-          <div className="disc"><span>Desconto (R$)</span><input inputMode="decimal" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0,00" /></div>
+          <div className="disc"><span>Desconto (R$ ou %)</span><input value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0,00 ou 10%" /></div>
+          {(manual > 0 || extraAmt > 0) && <div className="ben-line"><span>{[extraAmt > 0 && `Adicional +${money(extraAmt)}`, manual > 0 && `Desconto -${money(Math.min(manual, subtotal))}`].filter(Boolean).join(' · ')}</span><span /></div>}
           <div className="grand"><span>Total</span><b>{money(total)}</b></div>
           <div className="comm"><span>Comissão de {barber?.name.split(' ')[0]}</span><b>{money(commission)}</b></div>
         </div>

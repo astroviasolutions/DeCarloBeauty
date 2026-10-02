@@ -67,6 +67,10 @@ export function StoreProvider({ children }) {
     saveSettings: (s) => run(() => db.saveSettings(s), 'Configurações salvas'),
     upsertClient: (c) => run(() => db.upsertClient(c)),
     createSale: (s) => run(() => db.createSale(s), 'Venda finalizada'),
+    adjustSale: async (id, a, payment) => {
+      await run(() => db.adjustSale(id, a, payment), 'Venda ajustada')
+      setData((d) => d && { ...d, sales: d.sales.map((x) => (x.id === id ? { ...x, ...a, payment: payment || x.payment } : x)), appointments: d.appointments.map((x) => (x.saleId === id || x.id === d.sales.find((y) => y.id === id)?.appointmentId ? { ...x, total: a.total } : x)) })
+    },
     deleteSale: async (id) => { await run(() => db.deleteSale(id), 'Venda estornada'); setData((d) => d && { ...d, sales: d.sales.filter((x) => x.id !== id) }) },
     resetDemo: async () => { db.reset(); await refresh('full'); await loadPublic(); notify('Dados de demonstração restaurados') },
     reload: () => refresh('poll'),

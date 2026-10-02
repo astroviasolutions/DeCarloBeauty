@@ -5,7 +5,7 @@ import { Avatar, Button, Field, Modal, StatusBadge } from './ui'
 import Checkout from './Checkout'
 import { anamneseAlerts, ClientModal } from '../pages/staff/Cadastros'
 import { PortfolioModal } from './Loyalty'
-import { canCharge as canChargeFn, cls, fmtDateLong, fmtPhone, freeSlots, maskPhone, money, onlyDigits, relDay, today, toHHMM, toMin, waLink, weekday } from '../lib/utils'
+import { canCharge as canChargeFn, cls, fmtDateLong, fmtPhone, freeSlots, maskPhone, money, onlyDigits, relDay, today, toHHMM, toMin, waLink, weekday , PAYMENTS } from '../lib/utils'
 import { msg as fillMsg } from '../lib/messages'
 import { db, isDemo } from '../data'
 import { doesService, totalDuration } from '../lib/commission'
@@ -71,6 +71,21 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
           <div><Clock size={18} /><span>Duração</span><b>{appt.duration} min</b></div>
           <div><UserRound size={18} /><span>{barber?.name}</span><b>{appt.source === 'online' ? 'App' : 'Balcão'}</b></div>
         </div>
+        {(() => {
+          const sale = data.sales?.find((s) => s.id === appt.saleId) || data.sales?.find((s) => s.appointmentId === appt.id)
+          if (!sale) return null
+          const extras = sale.items.filter((i) => i.type === 'extra')
+          const prods = sale.items.filter((i) => i.type === 'product')
+          return (
+            <div className="appt-charged">
+              <b>Cobrado no caixa</b>
+              {prods.map((i, k) => <span key={`p${k}`}><em>{i.qty > 1 ? `${i.qty}x ` : ''}{i.name}</em><i>+{money(i.price * i.qty)}</i></span>)}
+              {extras.map((i, k) => <span key={`e${k}`}><em>{i.name}</em><i>+{money(i.price)}</i></span>)}
+              {Number(sale.discount) > 0 && <span><em>{sale.benefit?.label && Number(sale.benefit.amount) >= Number(sale.discount) ? sale.benefit.label : 'Desconto'}</em><i>-{money(sale.discount)}</i></span>}
+              <span className="tot"><em>Total pago{sale.payment ? ` · ${PAYMENTS[sale.payment] || sale.payment}` : ''}</em><i>{money(sale.total)}</i></span>
+            </div>
+          )
+        })()}
         {appt.notes && <p className="appt-notes"><b>Observações:</b> {appt.notes}</p>}
         {client && (
           <div className="appt-links">

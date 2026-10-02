@@ -70,3 +70,20 @@ export const totalDuration = (list, barber) => list.reduce((a, s) => a + duratio
 /** A profissional faz este serviço? (lista vazia = faz todos) */
 export const doesService = (b, sid) => !b?.serviceIds?.length || b.serviceIds.includes(sid)
 export const doesAll = (b, ids = []) => ids.every((id) => doesService(b, id))
+
+/** Recalcula uma venda já fechada com um novo desconto (mantém o benefício que já tinha) */
+export function adjustSale(sale, newDiscount, rules = {}) {
+  const items = sale.items || []
+  const subtotal = round2(items.reduce((a, x) => a + Number(x.price) * Number(x.qty), 0))
+  const disc = Math.min(subtotal, Math.max(0, round2(newDiscount)))
+  const ben = sale.benefit && ['club', 'runas'].includes(sale.benefit.kind) ? Math.min(Number(sale.benefit.amount || 0), disc) : 0
+  const base = rules.discountReduces === false ? 0 : disc - ben
+  const goods = items.filter((x) => x.type !== 'extra')
+  const gsub = goods.reduce((a, x) => a + Number(x.price) * Number(x.qty), 0)
+  const f = gsub ? Math.max(0, (gsub - Math.min(base, gsub)) / gsub) : 1
+  const next = items.map((x) => {
+    const full = round2(Number(x.price) * Number(x.qty) * Number(x.commissionRate || 0) / 100)
+    return { ...x, commission: x.type === 'extra' ? full : round2(full * f) }
+  })
+  return { items: next, subtotal, discount: disc, total: round2(subtotal - disc), commissionTotal: round2(next.reduce((a, x) => a + x.commission, 0)) }
+}

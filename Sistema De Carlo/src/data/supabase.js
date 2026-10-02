@@ -150,6 +150,7 @@ export function createSupabaseDB(url, key) {
       return { ...sale, id }
     },
 
+    async adjustSale(id, a, payment) { must(await sb.rpc('adjust_sale', { p_id: id, p_items: a.items, p_discount: a.discount, p_total: a.total, p_commission_total: a.commissionTotal, p_payment: payment })) },
     async deleteSale(id) { must(await sb.rpc('delete_sale', { p_id: id })) },
 
     // ---- Portal do cliente ----
