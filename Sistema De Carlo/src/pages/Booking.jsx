@@ -46,7 +46,6 @@ export default function Booking() {
 
   const settings = pub?.settings
   const barbers = useMemo(() => pub?.barbers || [], [pub])
-  useReveal('.svc', [pub, step])
   const services = useMemo(() => (pub?.services || []).filter((s) => s.online !== false).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), [pub])
 
   // Um ou mais serviços combinados num único atendimento (duração e preço somados)
