@@ -10,7 +10,7 @@ import { commissionSummary } from '../../lib/commission'
 import { addDays, fmtDate, fmtDateLong, money, PERIODS, sum, today, WD_SHORT, weekday } from '../../lib/utils'
 
 export default function Dashboard() {
-  const { data } = useStore()
+  const { data, session } = useStore()
   const [sel, setSel] = useState(null)
   const t = today()
   const { sales, appointments, barbers, payouts } = data
@@ -51,17 +51,17 @@ export default function Dashboard() {
       <div className="page-head">
         <div>
           <p className="eyebrow">{fmtDateLong(t)}</p>
-          <h1 className="page-title">Visão geral</h1>
+          <h1 className="page-title v-hello">Olá, <span className="v-it">{(() => { const n = session?.name || ''; return /^Gestão\s+/i.test(n) ? n.replace(/^Gestão\s+/i, '') : (n.split(' ')[0] || 'equipe') })()}</span></h1>
         </div>
         <Link className="btn btn-primary" to="/painel/caixa"><Receipt size={18} /> Abrir caixa</Link>
       </div>
 
       <div className="stats">
-        <Stat accent label="Faturamento hoje" value={money(revenueToday)} sub={`${todaySales.length} vendas`} icon={Receipt} />
+        <Stat label="Faturamento hoje" value={money(revenueToday)} sub={`${todaySales.length} vendas`} icon={Receipt} />
         <Stat label="Faturamento do mês" value={money(revenueMonth)} sub={`${growth >= 0 ? '▲' : '▼'} ${Math.abs(growth).toFixed(0)}% vs. mês anterior`} icon={TrendingUp} />
         <Stat label="Atendimentos hoje" value={todayAppts.length} sub={`${upcoming.length} a caminho`} icon={CalendarDays} />
         <Stat label="Comissões a pagar" value={money(due)} sub={`Ticket médio ${money(ticket)}`} icon={Wallet} />
-        <Stat label="Clube (recorrente)" value={money(clubMRR)} sub={`${activeSubs.length} assinantes ativos`} icon={Crown} />
+        <Stat accent label="Clube (recorrente)" value={money(clubMRR)} sub={`${activeSubs.length} assinantes ativos`} icon={Crown} />
       </div>
 
       <div className="grid-2">
@@ -71,7 +71,7 @@ export default function Dashboard() {
         <Card title="Próximos de hoje" action={<Link to="/painel/agenda" className="link">Agenda</Link>} pad={false}>
           {upcoming.length ? (
             <div className="list">{upcoming.slice(0, 6).map((a) => <ApptRow key={a.id} a={a} onClick={() => setSel(a)} />)}</div>
-          ) : <Empty icon={CalendarDays} title="Agenda livre" text="Nenhum atendimento pendente hoje." />}
+          ) : <Empty icon={CalendarDays} title="Agenda livre" text="Nenhum atendimento pendente hoje. Que tal encaixar alguém?" action={<Link to="/painel/agenda" className="btn btn-primary btn-sm">Abrir agenda</Link>} />}
         </Card>
       </div>
 

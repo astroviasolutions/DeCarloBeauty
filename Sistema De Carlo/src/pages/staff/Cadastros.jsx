@@ -1,3 +1,4 @@
+import { compressImage } from '../../lib/image'
 import { useMemo, useState } from 'react'
 import { Camera, Crown, Gift, Megaphone, MessageCircle, Package, Pencil, Plus, Search, Send, Sparkles, Trash2, Users } from 'lucide-react'
 import { useStore } from '../../state/Store'
@@ -140,7 +141,7 @@ export function ClientModal({ c: raw, onClose, restricted = false }) {
             <Badge tone={a.status === 'concluido' ? 'good' : a.status === 'faltou' ? 'warn' : a.status === 'cancelado' ? 'bad' : 'neutral'}>{a.status}</Badge>
           </div>
         ))}
-        {!history.length && <p className="muted">Sem histórico ainda.</p>}
+        {!history.length && <Empty title="Sem histórico ainda" text="Os atendimentos e compras desta cliente aparecem aqui." />}
       </div>
     </Modal>
   )
@@ -320,6 +321,10 @@ export function Equipe() {
     const { accessEmail: _ae, accessPass: _ap, accessSent: _as, ...clean } = edit
     const r = { ...clean, serviceOverrides: cleanOverrides(edit.serviceOverrides), goal: Number(edit.goal || 0), serviceRate: edit.serviceRate === '' || edit.serviceRate == null ? null : Number(edit.serviceRate), productRate: edit.productRate === '' || edit.productRate == null ? null : Number(edit.productRate), phone: onlyDigits(edit.phone), room: (edit.room || '').replace(/\s+/g, ' ').trim() || null }
     if (!isDemo) delete r.pin
+    delete r.photoData
+    if (edit.photoData) {
+      try { r.photo = await actions.uploadAvatar(edit.id, edit.photoData) } catch (er) { actions.notify(`Foto não enviada: ${er.message}`, 'bad'); return }
+    }
     await actions.upsert('barbers', r); setEdit(null)
   }
   const activeIds = data.services.filter((x) => x.active).map((x) => x.id)
@@ -343,7 +348,7 @@ export function Equipe() {
       <div className="cards team">
         {data.barbers.map((b) => (
           <div key={b.id} className={cls('team-card', !b.active && 'inactive')}>
-            <Avatar name={b.name} color={b.color} size={56} />
+            <Avatar name={b.name} color={b.color} photo={b?.photo} size={56} />
             <b>{b.name}</b>
             <small>{b.bio || 'Profissional'}</small>
             <div className="team-rates">
@@ -362,6 +367,17 @@ export function Equipe() {
       <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? 'Editar profissional' : 'Nova profissional'} footer={<Button block onClick={save} disabled={!edit?.name}>Salvar</Button>}>
         {edit && (
           <div className="form-grid">
+            <div className="span-2 photo-pick">
+              <Avatar name={edit.name || '?'} color={edit.color} size={72} photo={edit.photoData || edit.photo} />
+              <div>
+                <b>Foto da profissional</b>
+                <small className="muted">Aparece no site, na agenda e no painel. Use uma foto de rosto, bem iluminada.</small>
+                <div className="range">
+                  <label className="btn btn-ghost btn-sm">{edit.photo || edit.photoData ? 'Trocar foto' : 'Escolher foto'}<input type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; try { const { dataUrl } = await compressImage(f, 480, 0.8); setEdit((x) => ({ ...x, photoData: dataUrl })) } catch (er) { actions.notify(er.message, 'bad') } }} /></label>
+                  {(edit.photo || edit.photoData) && <button type="button" className="link" onClick={() => setEdit({ ...edit, photo: null, photoData: null })}>Remover</button>}
+                </div>
+              </div>
+            </div>
             <Field label="Nome" required className="span-2"><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
             <Field label="WhatsApp"><input inputMode="tel" value={maskPhone(edit.phone)} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} /></Field>
             <Field label="Sala (opcional)" hint="Quem divide a mesma sala: use o mesmo nome. Um horário ocupa a sala para as duas."><input value={edit.room || ''} onChange={(e) => setEdit({ ...edit, room: e.target.value })} placeholder="Ex.: Sala 2" /></Field>
@@ -433,5 +449,5 @@ function cleanOverrides(o = {}) {
 }
 
 /** Campos da profissional que vão para o banco (sem os calculados na tela) */
-const stripBarber = ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds, lunch, room }) =>
+const stripBarber = ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds, lunch, room, photo }) =>
   ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds: serviceIds || [], lunch: lunch || null, room: room || null })

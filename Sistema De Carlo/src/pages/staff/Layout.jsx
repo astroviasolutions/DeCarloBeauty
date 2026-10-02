@@ -64,7 +64,7 @@ export default function StaffLayout() {
         <div className="side-foot">
           <div className="theme-row"><span>Tema</span><ThemeToggle /></div>
           <div className="side-user">
-            <Avatar name={session.name} color={barber?.color || '#1F3E66'} size={34} />
+            <Avatar name={session.name} color={barber?.color || '#1F3E66'} photo={barber?.photo} size={34} />
             <div><b>{session.name}</b><small>{session.role === 'admin' ? 'Proprietária' : 'Profissional'}</small></div>
           </div>
           <button className="side-link" onClick={actions.logout}><LogOut size={18} /> Sair</button>

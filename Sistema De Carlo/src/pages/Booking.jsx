@@ -70,6 +70,33 @@ export default function Booking() {
 
   const dayOpen = (d) => !!settings?.hours?.[weekday(d)]
 
+  // "Próximo horário livre": primeiro horário do procedimento principal, hoje ou nos próximos dias
+  const [next, setNext] = useState(null)
+  useEffect(() => {
+    if (!settings || !services.length || !barbers.length) return
+    let alive = true
+    const svc = services[0]
+    ;(async () => {
+      for (const d of days.slice(0, 7)) {
+        if (!settings.hours?.[weekday(d)]) continue
+        const b = await actions.busy(d).catch(() => [])
+        let best = null
+        for (const p of barbers.filter((x) => doesAll(x, [svc.id]))) {
+          if (p.daysOff?.includes(weekday(d))) continue
+          const s = freeSlots({ date: d, hours: settings.hours[weekday(d)], duration: totalDuration([svc], p), step: Number(settings.slotStep || 30), breakTime: p.lunch || settings.breakTime, busy: b.filter((x) => x.barberId === p.id) })
+          if (s[0] && (!best || s[0] < best.time)) best = { date: d, time: s[0], barber: p, svc }
+        }
+        if (best) { if (alive) setNext(best); return }
+      }
+    })()
+    return () => { alive = false }
+  }, [settings, services, barbers, days, actions])
+  const takeNext = () => {
+    if (!next) return
+    setPicked([next.svc.id]); setBarberId(next.barber.id); setAutoDay(false); setDate(next.date); setTime(next.time); setStep(3)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   // Cliente que já agendou antes: carrega runas, clube, aniversário e "o de sempre"
   const myPhone = onlyDigits(me.phone)
   useEffect(() => {
@@ -199,7 +226,20 @@ export default function Booking() {
             <img className="hero-mark only-dark" src={BRAND.markLight} alt="" />
             <h1 className="wordmark">{settings.shopName}</h1>
             <RuneRule />
+            <p className="v-hero-h">Seu momento de <span className="v-it">cuidado</span> começa aqui.</p>
             <p className="hero-lead">{settings.page?.heroText || BRAND.heroText}</p>
+            {next && !done && step === 1 && (
+              <button type="button" className="v-next" onClick={takeNext}>
+                <span className="v-next-k"><i /> PRÓXIMO HORÁRIO LIVRE</span>
+                <span className="v-next-row">
+                  <span>
+                    <span className="v-next-t">{relDay(next.date)}, {next.time}</span>
+                    <span className="v-next-s" style={{ display: 'block' }}>com {next.barber.name.split(' ')[0]} · {next.svc.name}</span>
+                  </span>
+                  <span className="v-next-go"><ArrowRight size={20} /></span>
+                </span>
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -351,7 +391,7 @@ export default function Booking() {
                   </button>
                   {able.map((b) => (
                     <button key={b.id} role="radio" aria-checked={barberId === b.id} className={cls('barber-chip', barberId === b.id && 'on')} onClick={() => setBarberId(b.id)}>
-                      <Avatar name={b.name} color={b.color} size={44} />
+                      <Avatar name={b.name} color={b.color} photo={b?.photo} size={44} />
                       <b>{b.name.split(' ')[0]}</b><small>{b.bio || 'Profissional'}</small>
                       {b.rating?.count > 0 && <span className="chip-rate"><Star size={11} /> {b.rating.avg.toFixed(1)}</span>}
                     </button>
@@ -465,6 +505,7 @@ function Success({ done, settings, onAgain }) {
       <h2>{done.rebooked ? 'Horário remarcado!' : 'Horário reservado!'}</h2>
       <p>Te esperamos, {done.clientName.split(' ')[0]}.</p>
       <div className="summary">
+        <div className="v-ticket-top"><span>{settings.shopName}</span><b className="v-ticket-time">{done.time}</b></div>
         <div><Sparkles size={18} /><span>{done.service.name}</span><b>{money(done.service.price)}</b></div>
         <div><CalendarDays size={18} /><span>{fmtDateLong(done.date)}</span><b>{done.time}</b></div>
         <div><User size={18} /><span>{done.barber.name}</span><b /></div>

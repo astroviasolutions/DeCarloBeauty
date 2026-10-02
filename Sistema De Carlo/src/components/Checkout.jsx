@@ -172,12 +172,12 @@ export default function Checkout({ appointment, presetBarberId, lockBarber, onDo
       <div className="pdv-cart">
         <Field label="Profissional">
           {lockBarber ? (
-            <div className="locked"><Avatar name={barber?.name} color={barber?.color} size={28} /> {barber?.name}</div>
+            <div className="locked"><Avatar name={barber?.name} color={barber?.color} photo={barber?.photo} size={28} /> {barber?.name}</div>
           ) : (
             <div className="barber-pills">
               {activeBarbers.map((b) => (
                 <button key={b.id} className={cls('pill', b.id === barberId && 'on')} onClick={() => setBarberId(b.id)}>
-                  <Avatar name={b.name} color={b.color} size={22} /> {b.name.split(' ')[0]}
+                  <Avatar name={b.name} color={b.color} photo={b?.photo} size={22} /> {b.name.split(' ')[0]}
                 </button>
               ))}
             </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Lock, RotateCcw, Unlock } from 'lucide-react'
+import { Lock, RotateCcw, Unlock, Receipt } from 'lucide-react'
 import { useStore } from '../../state/Store'
 import { Button, Card, Empty, Field, Modal } from '../../components/ui'
 import Checkout from '../../components/Checkout'
@@ -84,7 +84,7 @@ function CaixaInner() {
                 )
               })}
             </div>
-          ) : <Empty title="Nenhuma venda ainda hoje" text="As vendas finalizadas aparecem aqui." />}
+          ) : <Empty icon={Receipt} title="Nenhuma venda ainda hoje" text="As vendas finalizadas aparecem aqui." />}
         </Card>
         <Card title="Entradas por forma de pagamento">
           <div className="pay-sum">

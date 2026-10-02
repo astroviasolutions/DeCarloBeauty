@@ -196,6 +196,7 @@ export function createDemoDB() {
       if (data.reviews.some((r) => r.saleId === saleId)) throw new Error('Este atendimento já foi avaliado. Obrigado!')
       data.reviews.push({ id: uid(), saleId, barberId: s.barberId, clientName: s.clientName, stars: Number(stars), comment: comment || '', createdAt: today() }); save()
     },
+    async uploadAvatar(_id, dataUrl) { return dataUrl },
     async savePhoto({ barberId, clientId, appointmentId, dataUrl, caption, isPrivate = false }) {
       const row = { id: uid(), barberId, clientId, appointmentId, url: dataUrl, caption: caption || '', createdAt: today(), private: !!isPrivate }
       data.photos.unshift(row)

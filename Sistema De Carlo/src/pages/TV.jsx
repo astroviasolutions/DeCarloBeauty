@@ -66,7 +66,7 @@ export default function TV() {
         <section className="tv-board" style={{ gridTemplateColumns: `repeat(${Math.min(board.length, 4)}, 1fr)` }}>
           {board.map(({ b, current, next, off }) => (
             <article key={b.id} className="tv-col">
-              <div className="tv-barber"><Avatar name={b.name} color={b.color} size={58} /><b>{first(b.name)}</b></div>
+              <div className="tv-barber"><Avatar name={b.name} color={b.color} photo={b?.photo} size={58} /><b>{first(b.name)}</b></div>
               <div className={`tv-now ${current ? 'busy' : ''}`}>
                 <small>{off ? 'Folga hoje' : current ? 'Na cadeira' : 'Livre agora'}</small>
                 {current ? <><b>{first(current.clientName)}</b><span>{serviceNames(current, data.services)}</span></> : <b className="dim">{off ? '—' : 'Disponível'}</b>}

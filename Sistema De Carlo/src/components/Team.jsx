@@ -38,7 +38,7 @@ export function Arena({ highlightId, only }) {
       {rows.map((r, i) => (
         <div key={r.barber.id} className={cls('arena-row', highlightId === r.barber.id && 'me')}>
           {!only && <span className={cls('arena-pos', MEDALS[i])}>{i < 3 ? <Medal size={18} /> : i + 1}</span>}
-          <Avatar name={r.barber.name} color={r.barber.color} size={36} />
+          <Avatar name={r.barber.name} color={r.barber.color} photo={r.barber?.photo} size={36} />
           <div className="arena-main">
             <div className="arena-top">
               <b>{r.barber.name}</b>

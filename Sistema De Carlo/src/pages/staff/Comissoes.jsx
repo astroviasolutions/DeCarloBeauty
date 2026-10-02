@@ -47,7 +47,7 @@ export default function Comissoes() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.barber.id}>
-                  <td><div className="who"><Avatar name={r.barber.name} color={r.barber.color} size={30} /><div><b>{r.barber.name}</b><small>{r.barber.serviceRate != null ? `${r.barber.serviceRate}% serv.` : 'padrão'} · {r.barber.productRate != null ? `${r.barber.productRate}% prod.` : 'padrão'}</small></div></div></td>
+                  <td><div className="who"><Avatar name={r.barber.name} color={r.barber.color} photo={r.barber?.photo} size={30} /><div><b>{r.barber.name}</b><small>{r.barber.serviceRate != null ? `${r.barber.serviceRate}% serv.` : 'padrão'} · {r.barber.productRate != null ? `${r.barber.productRate}% prod.` : 'padrão'}</small></div></div></td>
                   <td className="r">{r.svcCount}<small>{money(r.svcValue)}</small></td>
                   <td className="r">{money(r.svcComm)}</td>
                   <td className="r">{r.prdCount}<small>{money(r.prdValue)}</small></td>

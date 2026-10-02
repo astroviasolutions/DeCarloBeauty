@@ -46,7 +46,7 @@ export default function Avisos() {
                     <div className="aviso-reads">
                       {aud.map((b) => (
                         <span key={b.id} className={n.reads?.[b.id] ? 'on' : ''} title={n.reads?.[b.id] ? `Ciente em ${when(n.reads[b.id])}` : 'Ainda não leu'}>
-                          <Avatar name={b.name} color={b.color} size={22} /> {b.name.split(' ')[0]} {n.reads?.[b.id] ? <Check size={13} /> : '·'}
+                          <Avatar name={b.name} color={b.color} photo={b?.photo} size={22} /> {b.name.split(' ')[0]} {n.reads?.[b.id] ? <Check size={13} /> : '·'}
                         </span>
                       ))}
                     </div>

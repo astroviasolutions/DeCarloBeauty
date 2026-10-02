@@ -293,7 +293,7 @@ export function ApptRow({ a, onClick, showBarber = true }) {
         <b>{a.status === 'confirmado' ? '✅ ' : ''}{a.clientName}</b>
         <small>{serviceNames(a, data.services)}{showBarber && b ? ` · ${b.name.split(' ')[0]}` : ''}</small>
       </span>
-      {showBarber && b && <Avatar name={b.name} color={b.color} size={28} />}
+      {showBarber && b && <Avatar name={b.name} color={b.color} photo={b?.photo} size={28} />}
       <StatusBadge status={a.status} />
     </button>
   )

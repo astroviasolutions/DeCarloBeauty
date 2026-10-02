@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Moon, Sun, X } from 'lucide-react'
+import { Moon, Sparkles, Sun, X } from 'lucide-react'
 import { useTheme } from '../lib/theme'
 import { BRAND } from '../config/brand'
 import { cls, initials, money, STATUS } from '../lib/utils'
@@ -72,7 +72,8 @@ export function StatusBadge({ status }) {
   return <Badge tone={s.tone}>{s.label}</Badge>
 }
 
-export function Avatar({ name, color = '#1F3E66', size = 40 }) {
+export function Avatar({ name, color = '#1F3E66', size = 40, photo }) {
+  if (photo) return <span className="avatar has-photo" style={{ width: size, height: size, background: color }}><img src={photo} alt={name || ''} loading="lazy" /></span>
   return (
     <span className="avatar" style={{ width: size, height: size, background: color, fontSize: size * 0.38 }}>
       {initials(name)}
@@ -96,7 +97,7 @@ export function Stat({ label, value, sub, icon: Icon, accent }) {
 export function Empty({ icon: Icon, title, text, action }) {
   return (
     <div className="empty">
-      {Icon && <Icon size={36} strokeWidth={1.6} />}
+      <span className="empty-art" aria-hidden="true"><i /><i /><i />{Icon ? <Icon size={30} strokeWidth={1.7} /> : <Sparkles size={30} strokeWidth={1.7} />}</span>
       <strong>{title}</strong>
       {text && <p>{text}</p>}
       {action}

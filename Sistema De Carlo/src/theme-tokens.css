@@ -1,0 +1,15 @@
+/* Cores da marca para o design V2 (claro e escuro). O resto do visual vem de v2.css */
+:root, :root[data-bb-theme="light"] {
+  --v-bg: #F8F3F1; --v-surface: #FFFFFF; --v-surface2: #FBF8F6; --v-line: #EEE5E1;
+  --v-ink: #1F3E66; --v-on-ink: #FFFFFF; --v-text: #1B2B44; --v-muted: #636B7A;
+  --v-g1: #F8DAD4; --v-g2: #E3A59C; --v-g3: #A9BEDD; --v-soft: #F1CBC4; --v-ac: #1F3E66; --v-ac2: #D3857A; --v-tint: #E6EDF6; --v-tint2: #FBE6E2;
+  --v-on-grad: #1F3E66;
+  color-scheme: light;
+}
+:root[data-bb-theme="dark"] {
+  --v-bg: #0D1626; --v-surface: #14213A; --v-surface2: #1A2A47; --v-line: #26385C;
+  --v-ink: #F3E2DE; --v-on-ink: #0D1626; --v-text: #EEF1F6; --v-muted: #9AA7BB;
+  --v-g1: #F8DAD4; --v-g2: #E3A59C; --v-g3: #A9BEDD; --v-soft: #F1CBC4; --v-ac: #A9C1E6; --v-ac2: #E9A99F; --v-tint: #1C2C4C; --v-tint2: #2A2436;
+  --v-on-grad: #1F3E66;
+  color-scheme: dark;
+}

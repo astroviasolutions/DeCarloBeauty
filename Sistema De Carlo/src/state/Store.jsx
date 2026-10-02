@@ -15,6 +15,7 @@ export function StoreProvider({ children }) {
   const [ask, setAsk] = useState(null)
 
   const notify = useCallback((msg, tone = 'good') => {
+    try { navigator.vibrate?.(tone === 'bad' ? [30, 60, 30] : 18) } catch { /* sem vibração */ }
     setToast({ msg, tone, k: Date.now() })
     setTimeout(() => setToast((t) => (t && Date.now() - t.k > 2500 ? null : t)), 2800)
   }, [])
@@ -79,6 +80,7 @@ export function StoreProvider({ children }) {
     joinWaitlist: async (w) => { const r = await db.joinWaitlist(w); if (session) await refresh(); return r },
     reviewTarget: (id) => db.reviewTarget(id),
     submitReview: async (r) => { await db.submitReview(r); if (session) await refresh(); else await loadPublic() },
+    uploadAvatar: (id, d) => db.uploadAvatar(id, d),
     savePhoto: (p) => run(() => db.savePhoto(p), 'Foto salva no portfólio', 'full'),
     backup: () => db.backup(),
     deletePhoto: (id) => run(() => db.deletePhoto(id), 'Foto excluída', 'full'),

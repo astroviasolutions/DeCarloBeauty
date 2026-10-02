@@ -171,6 +171,12 @@ export function createSupabaseDB(url, key) {
     },
     async reviewTarget(saleId) { const r = must(await sb.rpc('review_target', { p_sale_id: saleId })); return r ? fromDb(r) : null },
     async submitReview({ saleId, stars, comment }) { must(await sb.rpc('submit_review', { p_sale_id: saleId, p_stars: stars, p_comment: comment || '' })) },
+    async uploadAvatar(barberId, dataUrl) {
+      const blob = await (await fetch(dataUrl)).blob()
+      const path = `${barberId || 'equipe'}/avatar-${Date.now()}.jpg`
+      must(await sb.storage.from('portfolio').upload(path, blob, { contentType: 'image/jpeg' }))
+      return sb.storage.from('portfolio').getPublicUrl(path).data.publicUrl
+    },
     async savePhoto({ barberId, clientId, appointmentId, dataUrl, caption, isPrivate = false }) {
       const blob = await (await fetch(dataUrl)).blob()
       const path = `${barberId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`
