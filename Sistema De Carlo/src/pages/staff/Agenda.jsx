@@ -174,7 +174,7 @@ function DayGrid({ date, barbers, appts, onPick, onBook, onBlock }) {
     <>
       {closed && <p className="notice">Fechado em {fmtDateLong(date).toLowerCase()} pelas configurações de horário.</p>}
       <p className="muted small agenda-hint">Toque num horário vazio para agendar direto.</p>
-      <div className="cal">
+      <div className="cal" key={date}>
         <div className="cal-head" style={{ gridTemplateColumns: `56px repeat(${barbers.length}, minmax(150px, 1fr))` }}>
           <span />
           {barbers.map((b) => (
@@ -402,7 +402,7 @@ function MobileDay({ date, setDate, barbers, appts, onPick, onBook, onBlock, who
       )}
       {!hours && <p className="notice">Fechado neste dia pelas configurações de horário.</p>}
       {off && <p className="notice">Folga de {one.name.split(' ')[0]} neste dia.</p>}
-      <div className="mt-list">
+      <div className="mt-list" key={date}>
         {!items.length && <Empty icon={Plus} title="Dia livre" text={onBook ? 'Nenhum atendimento ainda. Agende a primeira cliente.' : 'Nenhum atendimento neste dia.'} action={onBook ? <Button size="sm" icon={Plus} onClick={() => onBook({ barberId: one?.id, date })}>Agendar</Button> : null} />}
         {items.map((it, i) => {
           const row = (() => {

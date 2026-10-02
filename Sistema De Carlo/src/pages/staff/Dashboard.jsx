@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { CalendarDays, Crown, Receipt, TrendingUp, Users, Wallet } from 'lucide-react'
 import { useStore } from '../../state/Store'
 import { BarChart, Card, Empty, Stat } from '../../components/ui'
+import { Donut } from '../../components/fx'
 import { AppointmentModal, ApptRow } from '../../components/Appointments'
 import { Arena, Birthdays, WaitlistPanel } from '../../components/Team'
 import { MyReviews } from './Barber'
@@ -75,6 +76,13 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {(() => {
+        const m = {}
+        monthSales.forEach((s) => s.items.filter((i) => i.type === 'service').forEach((i) => { m[i.name] = (m[i.name] || 0) + Number(i.price) * Number(i.qty || 1) }))
+        const rows = Object.entries(m).sort((x, y) => y[1] - x[1]); const top = rows.slice(0, 5).map(([label, value]) => ({ label, value }))
+        const rest = rows.slice(5).reduce((x, r) => x + r[1], 0); if (rest > 0) top.push({ label: 'Outros', value: rest })
+        return <Card title="Faturamento por procedimento · mês" className="mb"><Donut data={top} fmt={money} /></Card>
+      })()}
       <div className="grid-2">
         <Card title="Destaques do mês" action={<Link to="/painel/equipe" className="link">Metas</Link>}><Arena /></Card>
         <Card title="Agendamento online">

@@ -253,7 +253,7 @@ export function Catalogo() {
           <div key={x.id} className={cls('item-card', !x.active && 'inactive')}>
             <span className="tile-ico">{isSvc ? <Sparkles size={18} /> : <Package size={18} />}</span>
             <div className="item-main">
-              <b>{x.name}</b>
+              <b>{x.name}</b>{isSvc && x.online === false && <span className="badge" style={{ marginLeft: 8 }}>Só interno</span>}
               <small>{isSvc ? `${x.duration} min` : `${x.stock} em estoque`} · comissão {x.commission}%</small>
             </div>
             <b className="item-price">{money(x.price)}</b>
@@ -280,7 +280,8 @@ export function Catalogo() {
             <Field label="Comissão (%)"><input inputMode="numeric" value={edit.commission} onChange={(e) => setEdit({ ...edit, commission: e.target.value })} /></Field>
             {isSvc ? (
               <><Field label="Duração padrão (min)" required><input inputMode="numeric" value={edit.duration} onChange={(e) => setEdit({ ...edit, duration: onlyDigits(e.target.value).slice(0, 3) })} /></Field>
-              <label className="toggle-row span-2"><span><b>Usa a sala da profissional</b><small>Desligue se o serviço é feito fora da sala (não bloqueia a colega que divide a sala).</small></span><span className="switch"><input type="checkbox" checked={!edit.noRoom} onChange={(e) => setEdit({ ...edit, noRoom: !e.target.checked })} /><span /></span></label></>
+              <label className="toggle-row span-2"><span><b>Usa a sala da profissional</b><small>Desligue se o serviço é feito fora da sala (não bloqueia a colega que divide a sala).</small></span><span className="switch"><input type="checkbox" checked={!edit.noRoom} onChange={(e) => setEdit({ ...edit, noRoom: !e.target.checked })} /><span /></span></label>
+              <label className="toggle-row span-2"><span><b>Aparece no agendamento online</b><small>Desligue para serviços de uso interno: a cliente não vê no site, mas a equipe continua agendando pelo painel.</small></span><span className="switch"><input type="checkbox" checked={edit.online !== false} onChange={(e) => setEdit({ ...edit, online: e.target.checked })} /><span /></span></label></>
             ) : (
               <Field label="Estoque"><input inputMode="numeric" value={edit.stock} onChange={(e) => setEdit({ ...edit, stock: e.target.value })} /></Field>
             )}

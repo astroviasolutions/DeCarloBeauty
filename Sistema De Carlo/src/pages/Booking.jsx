@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Silk, useReveal, Words } from '../components/fx'
 import { Link, useLocation } from 'react-router-dom'
 import { ArrowRight, CalendarDays, Camera, Check, ChevronLeft, Clock, Crown, Gift, Hourglass, Lock, MapPin, Megaphone, MessageCircle, RotateCcw, Sparkles, Star, Search, User } from 'lucide-react'
 import { useStore } from '../state/Store'
@@ -45,7 +46,8 @@ export default function Booking() {
 
   const settings = pub?.settings
   const barbers = useMemo(() => pub?.barbers || [], [pub])
-  const services = useMemo(() => (pub?.services || []).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), [pub])
+  useReveal('.svc', [pub, step])
+  const services = useMemo(() => (pub?.services || []).filter((s) => s.online !== false).slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), [pub])
 
   // Um ou mais serviços combinados num único atendimento (duração e preço somados)
   const service = useMemo(() => {
@@ -211,7 +213,7 @@ export default function Booking() {
   return (
     <div className="booking">
       <header className="hero">
-        <div className="hero-art">
+        <div className="hero-art"><Silk />
           <div className="hero-img" style={{ backgroundImage: `url(${BRAND.banner})` }} aria-hidden="true" />
           <div className="hero-top">
             <Logo size={38} />
@@ -226,7 +228,7 @@ export default function Booking() {
             <img className="hero-mark only-dark" src={BRAND.markLight} alt="" />
             <h1 className="wordmark">{settings.shopName}</h1>
             <RuneRule />
-            <p className="v-hero-h">Seu momento de <span className="v-it">cuidado</span> começa aqui.</p>
+            <p className="v-hero-h"><Words text="Seu momento de cuidado começa aqui." accent="cuidado" /></p>
             <p className="hero-lead">{settings.page?.heroText || BRAND.heroText}</p>
             {next && !done && step === 1 && (
               <button type="button" className="v-next" onClick={takeNext}>

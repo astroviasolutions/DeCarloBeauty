@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { CountUp, lastTap } from './fx'
 import { Moon, Sparkles, Sun, X } from 'lucide-react'
 import { useTheme } from '../lib/theme'
 import { BRAND } from '../config/brand'
@@ -42,6 +43,7 @@ export function Field({ label, hint, children, className, required }) {
 }
 
 export function Modal({ open, onClose, title, children, footer, wide }) {
+  const from = useMemo(() => (open && typeof window !== 'undefined' && window.innerWidth > 600 ? lastTap() : null), [open])
   useEffect(() => {
     if (!open) return
     const k = (e) => e.key === 'Escape' && onClose?.()
@@ -51,7 +53,7 @@ export function Modal({ open, onClose, title, children, footer, wide }) {
   if (!open) return null
   return (
     <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && onClose?.()}>
-      <div className={cls('modal', wide && 'modal-wide')} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={cls('modal', wide && 'modal-wide', from && 'v-from')} style={from ? { '--dx': `${from.x - window.innerWidth / 2}px`, '--dy': `${from.y - window.innerHeight / 2}px` } : undefined} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-head">
           <h3>{title}</h3>
           <button className="icon-btn" onClick={onClose} aria-label="Fechar"><X size={20} /></button>
@@ -88,7 +90,7 @@ export function Stat({ label, value, sub, icon: Icon, accent }) {
         <span className="stat-label">{label}</span>
         {Icon && <Icon size={18} />}
       </div>
-      <div className="stat-value">{value}</div>
+      <div className="stat-value"><CountUp text={value} /></div>
       {sub && <div className="stat-sub">{sub}</div>}
     </div>
   )

@@ -211,7 +211,8 @@ alter table barbers add column if not exists service_overrides jsonb not null de
 alter table barbers add column if not exists service_ids text[] not null default '{}';  -- serviços que ela faz (vazio = todos)
 alter table barbers add column if not exists lunch jsonb;  -- ["12:00","13:00"] almoço da profissional (vazio = intervalo geral)
 alter table barbers add column if not exists room text;              -- sala dividida: mesmo nome = um horário ocupa a sala para as duas
-alter table services add column if not exists no_room boolean not null default false;  -- serviço feito fora da sala
+alter table services add column if not exists no_room boolean not null default false;
+alter table services add column if not exists online boolean not null default true;  -- aparece no agendamento online  -- serviço feito fora da sala
 -- sincronização leve: o painel busca só o que mudou (economiza o tráfego do plano gratuito)
 alter table appointments add column if not exists updated_at timestamptz not null default now();
 alter table clients add column if not exists updated_at timestamptz not null default now();
