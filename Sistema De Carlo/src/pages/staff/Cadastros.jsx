@@ -1,0 +1,562 @@
+import { compressImage } from '../../lib/image'
+import { useMemo, useState } from 'react'
+import { Camera, Crown, Gift, Megaphone, MessageCircle, Package, Pencil, Plus, Search, Send, Sparkles, Trash2, Users } from 'lucide-react'
+import { useStore } from '../../state/Store'
+import { Avatar, Badge, Button, Card, Empty, Field, Modal, Segmented } from '../../components/ui'
+import { serviceNames } from '../../components/Appointments'
+import { ClientPortfolio, RuneMeter, Stars } from '../../components/Loyalty'
+import { ClientPackages } from '../../components/Packages'
+import ReceiptButtons from '../../components/Receipt'
+import ReviewButtons from '../../components/Review'
+import ClientFiles from '../../components/ClientFiles'
+import { addCredit } from '../../lib/credit'
+import { clubOf, isBirthdayMonth, loyaltyOf } from '../../lib/loyalty'
+import { cls, fmtDate, fmtPhone, maskPhone, money, onlyDigits, sum, today, waLink, WD_SHORT, addDays, parseMoney, PAYMENTS, saleRevenue } from '../../lib/utils'
+import { bookingLink, MESSAGES, msg as fillMsg } from '../../lib/messages'
+
+/* ============================== CLIENTES ============================== */
+export function Clientes() {
+  const { data } = useStore()
+  const [q, setQ] = useState('')
+  const [sel, setSel] = useState(null)
+  const [sort, setSort] = useState('recent')
+  const [view, setView] = useState('todos')
+
+  const rows = useMemo(() => data.clients.map((c) => clientStats(c, data)), [data])
+
+  const filtered = rows
+    .filter((c) => c.name.toLowerCase().includes(q.toLowerCase()) || onlyDigits(c.phone).includes(onlyDigits(q) || '###'))
+    .sort((a, b) => sort === 'spent' ? b.spent - a.spent : sort === 'name' ? a.name.localeCompare(b.name) : (b.last || '').localeCompare(a.last || ''))
+  const sumido = (c) => c.last && c.last < addDays(today(), -30) && !c.next
+
+  return (
+    <div>
+      <div className="page-head">
+        <div><p className="eyebrow">{data.clients.length} clientes</p><h1 className="page-title">Clientes</h1></div>
+        <div className="head-actions">
+          <div className="search"><Search size={16} /><input placeholder="Nome ou telefone" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+          <Segmented value={view} onChange={setView} options={[{ value: 'todos', label: 'Todos' }, { value: 'campanha', label: `Campanha de volta (${rows.filter(sumido).length})` }]} />
+          {view === 'todos' && <Segmented value={sort} onChange={setSort} options={[{ value: 'recent', label: 'Recentes' }, { value: 'spent', label: 'Top gasto' }, { value: 'name', label: 'A-Z' }]} />}
+        </div>
+      </div>
+      {view === 'campanha' ? <Campaign rows={rows} /> : (
+      <Card pad={false}>
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Cliente</th><th>WhatsApp</th><th className="r">Visitas</th><th className="r">Portfólio</th><th>Fidelidade</th><th className="r">Gasto total</th><th>Última visita</th><th>Próximo</th></tr></thead>
+            <tbody>
+              {filtered.map((c) => (
+                <tr key={c.id} className="clickable" onClick={() => setSel(c)}>
+                  <td><div className="who"><Avatar name={c.name} color="#2a2424" size={30} /><b>{c.name}</b>{c.club && <Badge tone="club"><Crown size={11} /> {c.club.plan.name}</Badge>}{isBirthdayMonth(c.birthday) && <Badge tone="info"><Gift size={11} /> Aniversário</Badge>}{sumido(c) && <Badge tone="warn">Sumido</Badge>}</div></td>
+                  <td>{fmtPhone(c.phone)}</td>
+                  <td className="r">{c.visits}</td>
+                  <td className="r">{c.photos ? <span className="photo-count"><Camera size={13} /> {c.photos}</span> : '—'}</td>
+                  <td><span className="rune-mini">{c.loy.level.rune} {c.loy.progress}/{c.loy.goal}</span>{c.loy.available > 0 && <Badge tone="good">{c.loy.available} grátis</Badge>}</td>
+                  <td className="r">{money(c.spent)}</td>
+                  <td>{c.last ? fmtDate(c.last) : '—'}</td>
+                  <td>{c.next ? `${fmtDate(c.next.date)} ${c.next.time}` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!filtered.length && <Empty icon={Users} title="Nenhum cliente encontrado" />}
+        </div>
+      </Card>
+      )}
+      {sel && <ClientModal c={sel} onClose={() => setSel(null)} />}
+    </div>
+  )
+}
+
+export function clientStats(c, data) {
+  const sales = data.sales.filter((s) => s.clientId === c.id)
+  const appts = data.appointments.filter((a) => a.clientId === c.id)
+  const last = sales.map((s) => s.date).sort().pop() || null
+  return {
+    // venda só de pacote/crédito (pagamento adiantado) não é visita; consumo pago com o saldo não conta o gasto duas vezes
+    ...c, loy: loyaltyOf(c.id, data.sales, data.settings), club: clubOf(c.id, data), visits: sales.filter((s) => (s.items || []).some((i) => !['package', 'credit'].includes(i.type))).length, spent: sum(sales, saleRevenue), last,
+    photos: data.photos.filter((p) => p.clientId === c.id).length,
+    noShows: appts.filter((a) => a.status === 'faltou').length,
+    next: appts.filter((a) => a.date >= today() && ['agendado', 'confirmado'].includes(a.status)).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))[0],
+  }
+}
+
+/** Ficha da cliente. `restricted` = visão da profissional (sem contato nem WhatsApp). */
+export function ClientModal({ c: raw, onClose, restricted = false, initialTab = 'cadastro' }) {
+  const { data, actions, session } = useStore()
+  const c = raw.loy ? raw : clientStats(raw, data)
+  const [notes, setNotes] = useState(c.notes || '')
+  const [an, setAn] = useState({ ...ANAMNESE_BLANK, ...(c.anamnese || {}) })
+  const setA = (k, v) => setAn((x) => ({ ...x, [k]: v }))
+  const [bday, setBday] = useState(c.birthday ? `${c.birthday.slice(3)}/${c.birthday.slice(0, 2)}` : '')
+  const bdayISO = (() => { const d = onlyDigits(bday); return d.length === 4 ? `${d.slice(2)}-${d.slice(0, 2)}` : '' })()
+  const [hq, setHq] = useState('')
+  const [nm, setNm] = useState(c.name || '')
+  const [ph, setPh] = useState(onlyDigits(c.phone || '').startsWith('sem') ? '' : onlyDigits(c.phone || ''))
+  const [addCred, setAddCred] = useState('')
+  const [credPay, setCredPay] = useState('pix')
+
+  // abas da ficha: tudo da cliente separado, sem rolar uma tela gigante
+  const [tab, setTab] = useState(initialTab)
+  const nPk = (data.packages || []).filter((p) => p.clientId === c.id && p.active).length
+  const fichaTabs = [['cadastro', 'Cadastro'], ['anamnese', 'Anamnese'], ['prontuario', `Prontuário (${(an.prontuario || []).length})`], ['pacotes', `Pacotes${nPk ? ` (${nPk})` : ''}`], ['comandas', 'Comandas'], ['agendamentos', 'Agendamentos'], ...(restricted ? [] : [['creditos', 'Créditos']]), ['anexos', 'Anexos'], ['portfolio', 'Portfólio']]
+
+  const saveClient = async () => {
+    const name = nm.trim() || c.name
+    const phone = restricted ? undefined : (ph.length >= 10 ? ph : c.phone)
+    if (!restricted && ph && ph.length < 10) return actions.notify('WhatsApp incompleto: use DDD + número', 'bad')
+    if (!restricted && phone !== c.phone && data.clients.some((x) => x.id !== c.id && onlyDigits(x.phone) === phone)) return actions.notify('Já existe outra cliente com esse WhatsApp', 'bad')
+    // crédito em haver: entra no caixa uma vez (venda "Crédito em haver", sem comissão) e soma no saldo
+    const credit = restricted ? Number(c.credit || 0) : await addCredit(actions, c, parseMoney(addCred), credPay, session?.barberId || data.barbers.find((b) => b.active)?.id)
+    const creditField = c.credit != null || credit !== 0 ? { credit } : {} // não envia a coluna à toa
+    await actions.upsert('clients', { ...stripClient(c), ...(restricted ? {} : { name, phone }), notes, anamnese: { ...an, prontuario: (an.prontuario || []).map(({ _new, ...e }) => e) }, birthday: bdayISO || c.birthday || '', ...creditField }, 'Cliente atualizado')
+    // horários futuros passam a usar o nome e o WhatsApp corrigidos
+    if (!restricted && (name !== c.name || phone !== c.phone)) {
+      for (const a of data.appointments.filter((x) => x.clientId === c.id && x.date >= today() && ['agendado', 'confirmado'].includes(x.status))) await actions.updateAppointment(a.id, { clientName: name, clientPhone: phone })
+    }
+    onClose()
+  }
+  const history = data.appointments.filter((a) => a.clientId === c.id).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))
+  const salesHistory = data.sales.filter((s) => s.clientId === c.id).sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')))
+  const back = fillMsg(data.settings, 'callClient', { nome: c.name.split(' ')[0], link: bookingLink() })
+  return (
+    <Modal open onClose={onClose} title={c.name} footer={<Button block onClick={saveClient}>Salvar</Button>}>
+      <div className="mini-kpis row">
+        <div><b>{c.visits}</b> visitas</div><div><b>{money(c.spent)}</b> gasto</div><div><b>{c.noShows}</b> faltas</div>
+      </div>
+      <RuneMeter loyalty={c.loy} />
+      {c.club && <p className="muted small mt-sm"><Crown size={13} /> Clube {c.club.plan.name} · {c.club.paid ? 'mensalidade em dia' : 'mensalidade pendente'}</p>}
+      {!restricted && onlyDigits(c.phone).length >= 10 && <a className="btn btn-wa btn-block mt" href={waLink(c.phone, back)} target="_blank" rel="noreferrer"><MessageCircle size={18} /> Chamar no WhatsApp</a>}
+      {anamneseAlerts(an).length > 0 && <div className="an-alerts mt-sm"><b>Atenção na ficha</b>{anamneseAlerts(an).map((t) => <span key={t} className="badge badge-warn">{t}</span>)}</div>}
+      <div className="ficha-tabs" role="tablist">
+        {fichaTabs.map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={tab === k} className={cls(tab === k && 'on')} onClick={() => { setTab(k); setHq('') }}>{l}</button>)}
+      </div>
+      {tab === 'cadastro' && <div className="form-grid">
+        {!restricted && <Field label="Nome" required><input value={nm} onChange={(e) => setNm(e.target.value)} /></Field>}
+        {!restricted && <Field label="WhatsApp" required><input inputMode="tel" value={maskPhone(ph)} onChange={(e) => setPh(onlyDigits(e.target.value).slice(0, 11))} placeholder="(41) 99999-9999" /></Field>}
+        <Field label="Aniversário (dd/mm)"><input inputMode="numeric" value={bday} onChange={(e) => { const d = onlyDigits(e.target.value).slice(0, 4); setBday(d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d) }} placeholder="dd/mm" /></Field>
+        <Field label="Observações" className="span-2"><textarea rows={6} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Preferências, tipo de pele, observações…" /></Field>
+      </div>}
+      {tab === 'creditos' && <div className="form-grid">
+        <Field label="Crédito em haver" hint={'Saldo pago adiantado, usado no caixa em "Saldo da cliente"'}><input value={money(Number(c.credit || 0))} disabled /></Field>
+        <Field label="Adicionar crédito (R$)" hint="Entra no caixa e soma no saldo. Grava ao clicar em Salvar."><div style={{ display: 'flex', gap: 8 }}><input inputMode="decimal" value={addCred} onChange={(e) => setAddCred(e.target.value)} placeholder="0,00" /><select value={credPay} onChange={(e) => setCredPay(e.target.value)}><option value="pix">Pix</option><option value="dinheiro">Dinheiro</option><option value="debito">Débito</option><option value="credito">Crédito</option></select></div></Field>
+      </div>}
+      {tab === 'anamnese' && <>
+        <div className="form-grid">
+          <Field label="Tipo de pele"><select value={an.skin} onChange={(e) => setA('skin', e.target.value)}><option value="">—</option>{['Normal', 'Seca', 'Oleosa', 'Mista', 'Sensível', 'Acneica'].map((o) => <option key={o}>{o}</option>)}</select></Field>
+          <Field label="Fototipo"><select value={an.phototype} onChange={(e) => setA('phototype', e.target.value)}><option value="">—</option>{['I', 'II', 'III', 'IV', 'V', 'VI'].map((o) => <option key={o}>{o}</option>)}</select></Field>
+          <Field label="Alergias" className="span-2"><input value={an.allergies} onChange={(e) => setA('allergies', e.target.value)} placeholder="Ex.: látex, ácido salicílico, lidocaína…" /></Field>
+          <Field label="Medicamentos em uso" className="span-2"><input value={an.meds} onChange={(e) => setA('meds', e.target.value)} placeholder="Ex.: isotretinoína, anticoagulante, anticoncepcional…" /></Field>
+          <Field label="Condições de saúde" className="span-2"><input value={an.conditions} onChange={(e) => setA('conditions', e.target.value)} placeholder="Ex.: diabetes, hipertensão, herpes recorrente, marcapasso…" /></Field>
+        </div>
+        <div className="an-checks">
+          {[['pregnant', 'Gestante ou lactante'], ['acids', 'Usa ácidos ou retinoides'], ['sun', 'Exposição solar recente'], ['consent', 'Termo de consentimento assinado']].map(([k, l]) => (
+            <label key={k} className="toggle-row"><span><b>{l}</b></span><span className="switch"><input type="checkbox" checked={!!an[k]} onChange={(e) => setA(k, e.target.checked)} /><span /></span></label>
+          ))}
+        </div>
+        <div className="form-grid mt">
+          <Field label="Principal queixa" className="span-2"><textarea rows={2} value={an.complaint || ''} onChange={(e) => setA('complaint', e.target.value)} /></Field>
+          <Field label="Profissão"><input value={an.profession || ''} onChange={(e) => setA('profession', e.target.value)} /></Field>
+          <Field label="Qualidade do sono"><select value={an.sleep || ''} onChange={(e) => setA('sleep', e.target.value)}><option value="">—</option><option>Boa</option><option>Ruim</option></select></Field>
+          <Field label="Água por dia"><select value={an.waterLiters || ''} onChange={(e) => setA('waterLiters', e.target.value)}><option value="">—</option><option>Até 1 litro</option><option>2 litros ou mais</option></select></Field>
+          {HABITS.map(([k, l]) => <Field key={k} label={l}><select value={an[k] || ''} onChange={(e) => setA(k, e.target.value)}><option value="">—</option><option>Sim</option><option>Não</option></select></Field>)}
+        </div>
+        <span className="field-label mt" style={{ display: 'block' }}>Problemas de saúde</span>
+        <div className="pkg-items mt-sm">
+          {DISEASES.map((d) => { const on = (an.diseases || []).includes(d); return <button key={d} type="button" className={cls('pill', on && 'on')} onClick={() => setA('diseases', on ? an.diseases.filter((x) => x !== d) : [...(an.diseases || []), d])}>{d}</button> })}
+        </div>
+        <div className="form-grid mt">
+          {HEALTH_TEXT.map(([k, l]) => <Field key={k} label={l} className="span-2"><input value={an[k] || ''} onChange={(e) => setA(k, e.target.value)} /></Field>)}
+        </div>
+      </>}
+      {tab === 'prontuario' && <>
+        <Prontuario list={an.prontuario || []} author={session?.name || (restricted ? 'Profissional' : 'Gestão')} onChange={(l) => setA('prontuario', l)} />
+        <p className="muted small">O prontuário é salvo junto com a ficha (botão Salvar).</p>
+      </>}
+      {tab === 'pacotes' && <ClientPackages client={c} canSell={!restricted} barberId={session?.barberId} />}
+      {tab === 'portfolio' && <ClientPortfolio client={c} barberId={session?.barberId} />}
+      {tab === 'anexos' && <ClientFiles client={c} canDelete={!restricted} />}
+      {tab === 'agendamentos' && (
+        <>
+          {history.length > 5 && <div className="search mb-sm"><Search size={16} /><input placeholder="Buscar no histórico (serviço, profissional, data)" value={hq} onChange={(e) => setHq(e.target.value)} /></div>}
+          <div className="list compact">
+            {history.filter((a) => !hq.trim() || `${serviceNames(a, data.services)} ${data.barbers.find((b) => b.id === a.barberId)?.name || ''} ${fmtDate(a.date)} ${a.status}`.toLowerCase().includes(hq.trim().toLowerCase())).slice(0, hq.trim() ? 60 : 12).map((a) => (
+              <div key={a.id} className="sale-row">
+                <span className="appt-time">{fmtDate(a.date)}</span>
+                <span className="appt-info"><b>{serviceNames(a, data.services)}</b><small>{data.barbers.find((b) => b.id === a.barberId)?.name} · {a.time}</small></span>
+                <Badge tone={a.status === 'concluido' ? 'good' : a.status === 'faltou' ? 'warn' : a.status === 'cancelado' ? 'bad' : 'neutral'}>{a.status}</Badge>
+              </div>
+            ))}
+            {!history.length && <Empty title="Sem agendamentos" text="Os agendamentos desta cliente aparecem aqui." />}
+          </div>
+        </>
+      )}
+      {tab === 'comandas' && <ClientComandas c={c} sales={salesHistory} />}
+    </Modal>
+  )
+}
+const stripClient = ({ id, name, phone, notes, anamnese, createdAt, birthday, lastCampaignAt }) => ({ id, name, phone, notes, anamnese, createdAt, birthday, lastCampaignAt })
+
+/* Comandas da cliente: vendas agrupadas por dia, da mais recente para a mais antiga */
+function ClientComandas({ c, sales }) {
+  const { data } = useStore()
+  const [q, setQ] = useState('')
+  const all = Object.values(sales.reduce((m, s) => { (m[s.date] ||= { key: s.date, date: s.date, sales: [] }).sales.push(s); return m }, {}))
+    .map((d) => ({ ...d, total: sum(d.sales, (s) => s.total), lines: d.sales.map((s) => ({ k: s.id, text: (s.items || []).map((i) => `${Number(i.qty) > 1 ? `${i.qty}x ` : ''}${i.name}${i.packageId ? ' (pacote)' : ''}`).join(', ') || 'Venda', sub: `${data.barbers.find((b) => b.id === s.barberId)?.name.split(' ')[0] || ''} · ${s.time || ''} · ${PAYMENTS[s.payment] || s.payment || '—'} · ${money(s.total)}` })) }))
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+    .filter((d) => !q.trim() || `${d.lines.map((l) => l.text).join(' ')} ${fmtDate(d.date)}`.toLowerCase().includes(q.trim().toLowerCase()))
+  return (
+    <>
+      {sales.length > 5 && <div className="search mb-sm"><Search size={16} /><input placeholder="Buscar comanda, serviço ou data" value={q} onChange={(e) => setQ(e.target.value)} /></div>}
+      <div className="list compact">
+        {all.slice(0, q.trim() ? 100 : 30).map((d) => (
+          <div key={d.key} className="comanda-card">
+            <div className="comanda-head"><b>Comanda {fmtDate(d.date)}</b><b>{money(d.total)}</b></div>
+            {d.lines.map((l) => <div key={l.k} className="comanda-line"><span>{l.text}</span><small>{l.sub}</small></div>)}
+            <ReceiptButtons sales={d.sales} phone={c.phone} />
+            <ReviewButtons sales={d.sales} phone={c.phone} />
+          </div>
+        ))}
+        {!all.length && <Empty title="Sem comandas" text="As comandas da cliente aparecem aqui." />}
+      </div>
+    </>
+  )
+}
+
+/* Prontuário: registros clínicos datados (só acrescenta; remove apenas o que ainda não foi salvo) */
+function Prontuario({ list, author, onChange }) {
+  const [txt, setTxt] = useState('')
+  const [dt, setDt] = useState(today())
+  const add = () => { if (!txt.trim()) return; onChange([{ id: Date.now().toString(36), date: dt, text: txt.trim(), author, _new: true }, ...list]); setTxt('') }
+  const sorted = [...list].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+  return (
+    <div className="pront">
+      <div className="pront-add">
+        <input type="date" value={dt} onChange={(e) => setDt(e.target.value)} />
+        <textarea rows={3} value={txt} onChange={(e) => setTxt(e.target.value)} placeholder="Procedimento, produto, lote/validade, parâmetros, reações, orientações…" />
+        <Button size="sm" variant="ghost" icon={Plus} onClick={add}>Adicionar ao prontuário</Button>
+      </div>
+      {!sorted.length && <p className="muted small">Nenhum registro ainda.</p>}
+      {sorted.map((e) => (
+        <div key={e.id} className="pront-item">
+          <small>{e.date ? fmtDate(e.date) : 'Sem data'} · {e.author}</small>
+          <p>{e.text}</p>
+          {e._new && <button className="link" onClick={() => onChange(list.filter((x) => x.id !== e.id))}>remover</button>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* Ficha de anamnese (estética) */
+const ANAMNESE_BLANK = { skin: '', phototype: '', allergies: '', meds: '', conditions: '', pregnant: false, acids: false, sun: false, consent: false, diseases: [], prontuario: [] }
+// hábitos (sim/não ficam como texto: vazio = não informado)
+const HABITS = [['smoker', 'Fumante'], ['alcohol', 'Ingere álcool'], ['exercise', 'Atividade física'], ['diet', 'Boa alimentação'], ['water', 'Ingere água'], ['breastfeeding', 'Amamentando'], ['lenses', 'Lentes nos olhos'], ['braces', 'Aparelho odontológico'], ['iud', 'DIU']]
+const DISEASES = ['Circulatório', 'Câncer', 'Renais (rins)', 'Respiratório', 'Endócrino', 'Digestivo', 'Diabetes', 'Anemia', 'DST', 'Epilepsia', 'Hepáticos', 'Ginecológico', 'Colesterol', 'Cardíacos', 'Depressão', 'Herpes', 'Pressão alta', 'Pressão baixa', 'Alergia']
+const HEALTH_TEXT = [['otherHealth', 'Outro problema de saúde'], ['surgeries', 'Cirurgias'], ['aesthetic', 'Procedimento estético no corpo'], ['aestheticWhere', 'Onde fez o procedimento'], ['implants', 'Marca-passo, pinos ou próteses'], ['cognitive', 'Deficiência cognitiva']]
+const isNo = (v) => !v || /^(n[aã]o|nenhum|nada|-)\.?$/i.test(String(v).trim())
+export function anamneseAlerts(a = {}) {
+  const out = []
+  if (a.allergies) out.push(`Alergia: ${a.allergies}`)
+  if (a.pregnant) out.push('Gestante/lactante')
+  if (a.breastfeeding === 'Sim') out.push('Amamentando')
+  ;(a.diseases || []).forEach((d) => out.push(d))
+  if (!isNo(a.implants)) out.push(`Marca-passo/pinos/próteses: ${a.implants}`)
+  if (a.acids) out.push('Usa ácidos/retinoides')
+  if (a.sun) out.push('Sol recente')
+  if (a.meds) out.push(`Medicação: ${a.meds}`)
+  if (a.conditions) out.push(a.conditions)
+  return out
+}
+
+/* ============================== CAMPANHA DE VOLTA ============================== */
+function Campaign({ rows }) {
+  const { data, actions } = useStore()
+  const [days, setDays] = useState(30)
+  const link = `${location.origin}${location.pathname}#/`
+  const [tpl, setTpl] = useState(() => (data.settings.messages?.comeback || '').trim() || MESSAGES.find((m) => m.key === 'comeback').text)
+  const list = rows.filter((c) => c.last && c.last < addDays(today(), -days) && !c.next).sort((a, b) => a.last.localeCompare(b.last))
+  const sentToday = (c) => c.lastCampaignAt === today()
+  const pending = list.filter((c) => !sentToday(c))
+  const msgFor = (c) => fillMsg({ ...data.settings, messages: { comeback: tpl } }, 'comeback', { nome: c.name.split(' ')[0], dias: Math.round((new Date(today()) - new Date(c.last)) / 86400000), link })
+  const mark = (c) => actions.upsert('clients', { ...stripClient(c), lastCampaignAt: today() }, null)
+  const next = pending[0]
+  return (
+    <div className="grid-2 campaign">
+      <Card title="Mensagem">
+        <Field label="Texto (use {nome}, {dias} e {link})"><textarea rows={5} value={tpl} onChange={(e) => setTpl(e.target.value)} /></Field>
+        <Field label="Sumidos há mais de" className="mt">
+          <Segmented value={days} onChange={setDays} options={[30, 45, 60, 90].map((d) => ({ value: d, label: `${d} dias` }))} />
+        </Field>
+        <div className="campaign-next">
+          <div><b>{pending.length}</b><span>para enviar hoje · {list.length - pending.length} enviados</span></div>
+          {next ? (
+            <a className="btn btn-wa btn-lg" href={waLink(next.phone, msgFor(next))} target="_blank" rel="noreferrer" onClick={() => mark(next)}><Send size={18} /> Enviar para {next.name.split(' ')[0]}</a>
+          ) : <span className="badge badge-good">Campanha concluída</span>}
+        </div>
+        <p className="muted small">Cada clique abre o WhatsApp com a mensagem pronta para um cliente. Depois de enviar, volte e clique de novo para o próximo.</p>
+      </Card>
+      <Card title={`Clientes sumidos (${list.length})`} pad={false}>
+        <div className="list">
+          {list.map((c) => (
+            <div key={c.id} className={cls('sale-row', sentToday(c) && 'done')}>
+              <span className="appt-time">{fmtDate(c.last)}</span>
+              <span className="appt-info"><b>{c.name}</b><small>{c.visits} visitas · {money(c.spent)}</small></span>
+              {sentToday(c) ? <Badge tone="good">Enviado</Badge>
+                : <a className="btn btn-ghost btn-sm" href={waLink(c.phone, msgFor(c))} target="_blank" rel="noreferrer" onClick={() => mark(c)}><Megaphone size={14} /> Enviar</a>}
+            </div>
+          ))}
+          {!list.length && <Empty icon={Users} title="Ninguém sumido" text="Todos os clientes voltaram dentro do prazo." />}
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+/* ============================== CATÁLOGO ============================== */
+export function Catalogo() {
+  const { data, actions } = useStore()
+  const [tab, setTab] = useState('services')
+  const [edit, setEdit] = useState(null)
+  const list = data[tab].slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name))
+  const isSvc = tab === 'services'
+  const blank = isSvc ? { name: '', description: '', duration: 30, price: 0, commission: 50, active: true, order: list.length + 1 } : { name: '', price: 0, stock: 0, commission: 10, active: true }
+
+  const team = data.barbers.filter((b) => b.active)
+  const [ov, setOv] = useState({}) // tempo/comissão por profissional deste serviço
+  const open = (x) => {
+    setEdit(x)
+    if (isSvc) setOv(Object.fromEntries(team.map((b) => [b.id, { duration: b.serviceOverrides?.[x.id]?.duration ?? '', commission: b.serviceOverrides?.[x.id]?.commission ?? '' }])))
+  }
+  const setOne = (bid, k, v) => setOv((o) => ({ ...o, [bid]: { ...o[bid], [k]: v } }))
+  const save = async () => {
+    const { overrides: _o, ...clean } = edit
+    const row = { ...clean, price: Number(edit.price), commission: Number(edit.commission) }
+    if (isSvc) row.duration = Math.max(5, Number(edit.duration) || 30); else row.stock = Number(edit.stock)
+    const saved = await actions.upsert(tab, row, 'Salvo')
+    if (isSvc && saved?.id) {
+      // grava o tempo/comissão próprios na ficha de cada profissional que mudou
+      for (const b of team) {
+        const cur = b.serviceOverrides?.[saved.id] || {}
+        const nx = ov[b.id] || {}
+        if (String(cur.duration ?? '') === String(nx.duration ?? '') && String(cur.commission ?? '') === String(nx.commission ?? '')) continue
+        const next = cleanOverrides({ ...(b.serviceOverrides || {}), [saved.id]: nx })
+        await actions.upsert('barbers', { ...stripBarber(b), serviceOverrides: next }, null)
+      }
+    }
+    setEdit(null)
+  }
+
+  return (
+    <div>
+      <div className="page-head">
+        <div><p className="eyebrow">Preços e regras de comissão</p><h1 className="page-title">Catálogo</h1></div>
+        <div className="head-actions">
+          <Segmented value={tab} onChange={setTab} options={[{ value: 'services', label: 'Serviços' }, { value: 'products', label: 'Produtos' }]} />
+          <Button icon={Plus} onClick={() => open(blank)}>{isSvc ? 'Novo serviço' : 'Novo produto'}</Button>
+        </div>
+      </div>
+      <div className="cards">
+        {list.map((x) => (
+          <div key={x.id} className={cls('item-card', !x.active && 'inactive')}>
+            <span className="tile-ico">{isSvc ? <Sparkles size={18} /> : <Package size={18} />}</span>
+            <div className="item-main">
+              <b>{x.name}</b>{isSvc && x.online === false && <span className="badge" style={{ marginLeft: 8 }}>Só interno</span>}
+              <small>{isSvc ? `${x.duration} min` : `${x.stock} em estoque`} · comissão {x.commission}%</small>
+            </div>
+            <b className="item-price">{money(x.price)}</b>
+            {!x.active && <Badge>Inativo</Badge>}
+            {!isSvc && Number(x.stock) <= 3 && x.active && <Badge tone="warn">Estoque baixo</Badge>}
+            {isSvc && team.some((b) => b.serviceOverrides?.[x.id]?.duration) && (
+              <small className="item-ov">{team.filter((b) => b.serviceOverrides?.[x.id]?.duration).map((b) => `${b.name.split(' ')[0]} ${b.serviceOverrides[x.id].duration} min`).join(' · ')}</small>
+            )}
+            <button className="icon-btn sm" onClick={() => open(x)} aria-label="Editar"><Pencil size={16} /></button>
+          </div>
+        ))}
+      </div>
+      <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? 'Editar' : 'Cadastrar'} footer={
+        <div className="foot-row">
+          {edit?.id && <Button variant="danger" icon={Trash2} onClick={async () => { if (await actions.confirm(`Excluir ${edit.name}? Essa ação não pode ser desfeita.`, 'Excluir')) { await actions.remove(tab, edit.id); setEdit(null) } }}>Excluir</Button>}
+          <Button onClick={save} disabled={!edit?.name}>Salvar</Button>
+        </div>
+      }>
+        {edit && (
+          <div className="form-grid">
+            <Field label="Nome" required className="span-2"><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
+            {isSvc && <Field label="Descrição" className="span-2"><input value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></Field>}
+            <Field label="Preço (R$)" required><input inputMode="decimal" value={edit.price} onChange={(e) => setEdit({ ...edit, price: e.target.value })} /></Field>
+            <Field label="Comissão (%)"><input inputMode="numeric" value={edit.commission} onChange={(e) => setEdit({ ...edit, commission: e.target.value })} /></Field>
+            {isSvc ? (
+              <><Field label="Duração padrão (min)" required><input inputMode="numeric" value={edit.duration} onChange={(e) => setEdit({ ...edit, duration: onlyDigits(e.target.value).slice(0, 3) })} /></Field>
+              <label className="toggle-row span-2"><span><b>Usa a sala da profissional</b><small>Desligue se o serviço é feito fora da sala (não bloqueia a colega que divide a sala).</small></span><span className="switch"><input type="checkbox" checked={!edit.noRoom} onChange={(e) => setEdit({ ...edit, noRoom: !e.target.checked })} /><span /></span></label>
+              <label className="toggle-row span-2"><span><b>Aparece no agendamento online</b><small>Desligue para serviços de uso interno: a cliente não vê no site, mas a equipe continua agendando pelo painel.</small></span><span className="switch"><input type="checkbox" checked={edit.online !== false} onChange={(e) => setEdit({ ...edit, online: e.target.checked })} /><span /></span></label></>
+            ) : (
+              <Field label="Estoque"><input inputMode="numeric" value={edit.stock} onChange={(e) => setEdit({ ...edit, stock: e.target.value })} /></Field>
+            )}
+            <Field label="Status"><select value={edit.active ? '1' : '0'} onChange={(e) => setEdit({ ...edit, active: e.target.value === '1' })}><option value="1">Ativo</option><option value="0">Inativo</option></select></Field>
+            <p className="muted small span-2">Exemplo: {money(edit.price)} com {edit.commission || 0}% → profissional recebe {money((Number(edit.price) || 0) * (Number(edit.commission) || 0) / 100)}.</p>
+            {isSvc && team.length > 0 && (
+              <div className="span-2 ov-box">
+                <h4 className="sub-title">Tempo e comissão por profissional</h4>
+                <p className="muted small">Quanto tempo cada profissional leva neste procedimento. Em branco = usa o padrão ({edit.duration || 30} min · {edit.commission || 0}%). O tempo define os horários livres no site.</p>
+                <div className="ov-table">
+                  <div className="ov-row ov-head"><span>Profissional</span><span>Tempo (min)</span><span>Comissão (%)</span></div>
+                  {team.map((b) => (
+                    <div key={b.id} className="ov-row">
+                      <span><b>{b.name}</b><small>{b.bio || 'Profissional'}</small></span>
+                      <input inputMode="numeric" aria-label={`Tempo de ${b.name}`} placeholder={String(edit.duration || 30)} value={ov[b.id]?.duration ?? ''} onChange={(e) => setOne(b.id, 'duration', onlyDigits(e.target.value).slice(0, 3))} />
+                      <input inputMode="decimal" aria-label={`Comissão de ${b.name}`} placeholder={String(b.serviceRate ?? edit.commission ?? '')} value={ov[b.id]?.commission ?? ''} onChange={(e) => setOne(b.id, 'commission', e.target.value.replace(/[^\d.,]/g, '').replace(',', '.').slice(0, 5))} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+    </div>
+  )
+}
+
+/* ============================== EQUIPE ============================== */
+const COLORS = ['#B08A4A', '#86672F', '#C49A8A', '#8C6E63', '#6F7A6A', '#A7988A', '#4F5B66', '#2E2A26']
+
+export function Equipe() {
+  const { data, actions, isDemo } = useStore()
+  const [edit, setEdit] = useState(null)
+  const blank = { name: '', phone: '', pin: '', goal: 6000, color: COLORS[data.barbers.length % COLORS.length], serviceRate: null, productRate: null, daysOff: [0], active: true, bio: '', serviceOverrides: {}, serviceIds: [] }
+  const linked = (id) => data.staff?.find((x) => x.barberId === id)?.email || ''
+  const save = async () => {
+    const { accessEmail: _ae, accessPass: _ap, accessSent: _as, ...clean } = edit
+    const r = { ...clean, serviceOverrides: cleanOverrides(edit.serviceOverrides), goal: Number(edit.goal || 0), serviceRate: edit.serviceRate === '' || edit.serviceRate == null ? null : Number(edit.serviceRate), productRate: edit.productRate === '' || edit.productRate == null ? null : Number(edit.productRate), phone: onlyDigits(edit.phone), room: (edit.room || '').replace(/\s+/g, ' ').trim() || null }
+    if (!isDemo) delete r.pin
+    delete r.photoData
+    if (edit.photoData) {
+      try { r.photo = await actions.uploadAvatar(edit.id, edit.photoData) } catch (er) { actions.notify(`Foto não enviada: ${er.message}`, 'bad'); return }
+    }
+    await actions.upsert('barbers', r); setEdit(null)
+  }
+  const activeIds = data.services.filter((x) => x.active).map((x) => x.id)
+  const does = (sid) => !edit?.serviceIds?.length || edit.serviceIds.includes(sid)
+  const toggleSvc = (sid) => {
+    const cur = edit.serviceIds?.length ? edit.serviceIds.filter((x) => activeIds.includes(x)) : activeIds
+    const next = cur.includes(sid) ? cur.filter((x) => x !== sid) : [...cur, sid]
+    if (!next.length) return
+    setEdit({ ...edit, serviceIds: next.length === activeIds.length ? [] : next })
+  }
+  const toggleDay = (d) => setEdit({ ...edit, daysOff: edit.daysOff.includes(d) ? edit.daysOff.filter((x) => x !== d) : [...edit.daysOff, d] })
+  const setOv = (sid, k, v) => setEdit({ ...edit, serviceOverrides: { ...(edit.serviceOverrides || {}), [sid]: { ...(edit.serviceOverrides?.[sid] || {}), [k]: v } } })
+  const ownCount = (b) => Object.values(b.serviceOverrides || {}).filter((o) => o.duration || o.commission !== undefined && o.commission !== '' && o.commission !== null).length
+
+  return (
+    <div>
+      <div className="page-head">
+        <div><p className="eyebrow">Profissionais comissionadas</p><h1 className="page-title">Equipe</h1></div>
+        <Button icon={Plus} onClick={() => setEdit(blank)}>Nova profissional</Button>
+      </div>
+      <div className="cards team">
+        {data.barbers.map((b) => (
+          <div key={b.id} className={cls('team-card', !b.active && 'inactive')}>
+            <Avatar name={b.name} color={b.color} photo={b?.photo} size={56} />
+            <b>{b.name}</b>
+            <small>{b.bio || 'Profissional'}</small>
+            <div className="team-rates">
+              <span>Serviços <b>{b.serviceRate != null ? `${b.serviceRate}%` : 'padrão'}</b></span>
+              <span>Produtos <b>{b.productRate != null ? `${b.productRate}%` : 'padrão'}</b></span>
+            </div>
+            <small className="muted">Folga: {b.daysOff?.length ? b.daysOff.map((d) => WD_SHORT[d]).join(', ') : 'nenhuma'}</small>
+            {(() => { const rs = data.reviews.filter((r) => r.barberId === b.id); const avg = rs.length ? rs.reduce((a, r) => a + r.stars, 0) / rs.length : 0; return rs.length ? <span className="team-rating"><Stars value={avg} size={12} /> {avg.toFixed(1)} · {rs.length}</span> : null })()}
+            <small className="muted">Meta do mês: {money(b.goal || 0)} · {data.photos.filter((p) => p.barberId === b.id).length} fotos</small>
+            {b.serviceIds?.length > 0 && <small className="team-ov">Faz {b.serviceIds.filter((id) => data.services.some((x) => x.id === id && x.active)).length} de {data.services.filter((x) => x.active).length} serviços</small>}
+            {ownCount(b) > 0 && <small className="team-ov">{ownCount(b)} procedimentos personalizados</small>}
+            <Button variant="ghost" size="sm" icon={Pencil} onClick={() => setEdit({ ...b, serviceRate: b.serviceRate ?? '', productRate: b.productRate ?? '' })}>Editar</Button>
+          </div>
+        ))}
+      </div>
+      <Modal open={!!edit} onClose={() => setEdit(null)} title={edit?.id ? 'Editar profissional' : 'Nova profissional'} footer={<Button block onClick={save} disabled={!edit?.name}>Salvar</Button>}>
+        {edit && (
+          <div className="form-grid">
+            <div className="span-2 photo-pick">
+              <Avatar name={edit.name || '?'} color={edit.color} size={72} photo={edit.photoData || edit.photo} />
+              <div>
+                <b>Foto da profissional</b>
+                <small className="muted">Aparece no site, na agenda e no painel. Use uma foto de rosto, bem iluminada.</small>
+                <div className="range">
+                  <label className="btn btn-ghost btn-sm">{edit.photo || edit.photoData ? 'Trocar foto' : 'Escolher foto'}<input type="file" accept="image/*" hidden onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; try { const { dataUrl } = await compressImage(f, 480, 0.8); setEdit((x) => ({ ...x, photoData: dataUrl })) } catch (er) { actions.notify(er.message, 'bad') } }} /></label>
+                  {(edit.photo || edit.photoData) && <button type="button" className="link" onClick={() => setEdit({ ...edit, photo: null, photoData: null })}>Remover</button>}
+                </div>
+              </div>
+            </div>
+            <Field label="Nome" required className="span-2"><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} /></Field>
+            <Field label="WhatsApp"><input inputMode="tel" value={maskPhone(edit.phone)} onChange={(e) => setEdit({ ...edit, phone: e.target.value })} /></Field>
+            <Field label="Sala (opcional)" hint="Quem divide a mesma sala: use o mesmo nome. Um horário ocupa a sala para as duas."><input value={edit.room || ''} onChange={(e) => setEdit({ ...edit, room: e.target.value })} placeholder="Ex.: Sala 2" /></Field>
+            <Field label="Almoço (opcional)" hint="Vazio = usa o intervalo geral de Ajustes">
+              <div className="range">
+                <input type="time" aria-label="Início do almoço" value={edit.lunch?.[0] || ''} onChange={(e) => setEdit({ ...edit, lunch: e.target.value ? [e.target.value, edit.lunch?.[1] || '13:00'] : null })} />
+                <input type="time" aria-label="Fim do almoço" value={edit.lunch?.[1] || ''} disabled={!edit.lunch} onChange={(e) => setEdit({ ...edit, lunch: [edit.lunch[0], e.target.value] })} />
+              </div>
+            </Field>
+            {isDemo ? <Field label="PIN de acesso (4 dígitos)"><input inputMode="numeric" maxLength={4} value={edit.pin} onChange={(e) => setEdit({ ...edit, pin: onlyDigits(e.target.value).slice(0, 4) })} /></Field>
+              : <div className="span-2 ov-box">
+                  <h4 className="sub-title">Acesso da profissional {linked(edit.id) ? <small className="muted">· ativo: {linked(edit.id)}</small> : ''}</h4>
+                  {!edit.id ? <p className="muted small">Salve a profissional primeiro. Depois abra de novo para criar o acesso.</p> : (
+                    <>
+                      <p className="muted small">Digite o e-mail dela e uma senha. O sistema cria o login e já liga a esta profissional. Se o e-mail já existir, a senha é trocada.</p>
+                      <div className="form-grid">
+                        <Field label="E-mail" required><input type="email" value={edit.accessEmail ?? linked(edit.id)} onChange={(e) => setEdit({ ...edit, accessEmail: e.target.value })} placeholder="email@da.profissional" /></Field>
+                        <Field label="Senha" required hint="Mínimo 6 caracteres"><input value={edit.accessPass ?? ''} onChange={(e) => setEdit({ ...edit, accessPass: e.target.value })} placeholder="Ex.: decarlo2026" /></Field>
+                      </div>
+                      <div className="range">
+                        <Button size="sm" disabled={!(edit.accessEmail ?? linked(edit.id))?.includes('@') || (edit.accessPass || '').length < 6} onClick={async () => { const email = (edit.accessEmail ?? linked(edit.id)).trim(); await actions.createStaffLogin(email, edit.accessPass, edit.id); setEdit({ ...edit, accessEmail: email, accessSent: { email, pass: edit.accessPass } }) }}>{linked(edit.id) ? 'Atualizar acesso' : 'Criar acesso'}</Button>
+                        {edit.accessSent && onlyDigits(edit.phone).length >= 10 && <a className="btn btn-wa btn-sm" target="_blank" rel="noreferrer" href={waLink(edit.phone, `Olá, ${edit.name.split(' ')[0]}! Seu acesso ao sistema da ${data.settings.shopName || 'De Carlo Beauty'}:\n🔗 ${location.origin}${location.pathname}#/painel\n📧 ${edit.accessSent.email}\n🔑 ${edit.accessSent.pass}\nEntre em "Área da equipe" e ative as notificações. 🦋`)}>Enviar acesso no WhatsApp</a>}
+                      </div>
+                    </>
+                  )}
+                </div>}
+            <Field label="Meta de faturamento no mês (R$)" className="span-2" hint="Usada nos Destaques do mês"><input inputMode="numeric" value={edit.goal ?? ''} onChange={(e) => setEdit({ ...edit, goal: onlyDigits(e.target.value) })} /></Field>
+            <Field label="Especialidade" className="span-2"><input value={edit.bio} onChange={(e) => setEdit({ ...edit, bio: e.target.value })} placeholder="Ex.: Degradê e navalha" /></Field>
+            <Field label="Comissão serviços (%)" hint="Vazio = usa o % de cada serviço"><input inputMode="numeric" value={edit.serviceRate} onChange={(e) => setEdit({ ...edit, serviceRate: e.target.value })} placeholder="padrão" /></Field>
+            <Field label="Comissão produtos (%)" hint="Vazio = usa o % de cada produto"><input inputMode="numeric" value={edit.productRate} onChange={(e) => setEdit({ ...edit, productRate: e.target.value })} placeholder="padrão" /></Field>
+            <Field label="Dias de folga" className="span-2">
+              <div className="days">{WD_SHORT.map((d, i) => <button key={d} type="button" className={cls('pill', edit.daysOff.includes(i) && 'on')} onClick={() => toggleDay(i)}>{d}</button>)}</div>
+            </Field>
+            <Field label="Cor" className="span-2">
+              <div className="days">{COLORS.map((c) => <button key={c} type="button" className={cls('swatch', edit.color === c && 'on')} style={{ background: c }} onClick={() => setEdit({ ...edit, color: c })} aria-label={c} />)}</div>
+            </Field>
+            <Field label="Status"><select value={edit.active ? '1' : '0'} onChange={(e) => setEdit({ ...edit, active: e.target.value === '1' })}><option value="1">Ativo</option><option value="0">Inativo</option></select></Field>
+            <div className="span-2 ov-box">
+              <h4 className="sub-title">Serviços que ela faz · tempo e comissão</h4>
+              <p className="muted small">Desmarque o que ela não faz: o serviço some da agenda dela e do site. Tempo e comissão em branco usam o padrão do Catálogo.</p>
+              <div className="ov-table with-check">
+                <div className="ov-row ov-head"><span>Faz</span><span>Procedimento</span><span>Tempo (min)</span><span>Comissão (%)</span></div>
+                {data.services.filter((x) => x.active).map((x) => (
+                  <div key={x.id} className={cls('ov-row', !does(x.id) && 'ov-off')}>
+                    <input type="checkbox" className="ov-check" aria-label={`Faz ${x.name}`} checked={does(x.id)} onChange={() => toggleSvc(x.id)} />
+                    <span><b>{x.name}</b><small>padrão {x.duration} min · {x.commission}%</small></span>
+                    <input inputMode="numeric" aria-label={`Tempo de ${x.name}`} placeholder={String(x.duration)} value={edit.serviceOverrides?.[x.id]?.duration ?? ''} onChange={(e) => setOv(x.id, 'duration', onlyDigits(e.target.value).slice(0, 3))} />
+                    <input inputMode="decimal" aria-label={`Comissão de ${x.name}`} placeholder={String(edit.serviceRate !== '' && edit.serviceRate != null ? edit.serviceRate : x.commission)} value={edit.serviceOverrides?.[x.id]?.commission ?? ''} onChange={(e) => setOv(x.id, 'commission', e.target.value.replace(/[^\d.,]/g, '').replace(',', '.').slice(0, 5))} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  )
+}
+
+/** Remove linhas vazias e converte para número */
+function cleanOverrides(o = {}) {
+  const out = {}
+  for (const [k, v] of Object.entries(o || {})) {
+    const d = v?.duration === '' || v?.duration == null ? null : Number(v.duration)
+    const c = v?.commission === '' || v?.commission == null ? null : Number(v.commission)
+    if ((d && d > 0) || (c !== null && !Number.isNaN(c))) out[k] = { ...(d && d > 0 ? { duration: d } : {}), ...(c !== null && !Number.isNaN(c) ? { commission: c } : {}) }
+  }
+  return out
+}
+
+/** Campos da profissional que vão para o banco (sem os calculados na tela) */
+const stripBarber = ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds, lunch, room, photo }) =>
+  ({ id, name, phone, pin, color, serviceRate, productRate, daysOff, active, bio, goal, serviceOverrides, serviceIds: serviceIds || [], lunch: lunch || null, room: room || null })

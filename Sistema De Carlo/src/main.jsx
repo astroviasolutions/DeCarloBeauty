@@ -1,0 +1,15 @@
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './styles.css'
+import './v2.css'
+import './theme-tokens.css'
+import App from './App'
+import { applyBrandColors } from './config/brand'
+import { applyTheme, initialTheme } from './lib/theme'
+import { registerSW } from './lib/push'
+
+document.documentElement.classList.add('v2')
+applyBrandColors()
+applyTheme(initialTheme())
+registerSW()
+createRoot(document.getElementById('root')).render(<StrictMode><App /></StrictMode>)
