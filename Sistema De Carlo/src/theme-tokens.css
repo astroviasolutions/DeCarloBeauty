@@ -1,0 +1,31 @@
+/* Cores da marca para o design V2 (claro e escuro). O resto do visual vem de v2.css */
+:root, :root[data-bb-theme="light"] {
+  --v-bg: #F8F3F1; --v-surface: #FFFFFF; --v-surface2: #FBF8F6; --v-line: #EEE5E1;
+  --v-ink: #1F3E66; --v-on-ink: #FFFFFF; --v-text: #1B2B44; --v-muted: #636B7A;
+  --v-g1: #F8DAD4; --v-g2: #E3A59C; --v-g3: #A9BEDD; --v-soft: #F1CBC4; --v-ac: #1F3E66; --v-ac2: #D3857A; --v-tint: #E6EDF6; --v-tint2: #FBE6E2;
+  --v-on-grad: #1F3E66;
+  color-scheme: light;
+}
+:root[data-bb-theme="dark"] {
+  --v-bg: #0D1626; --v-surface: #14213A; --v-surface2: #1A2A47; --v-line: #26385C;
+  --v-ink: #F3E2DE; --v-on-ink: #0D1626; --v-text: #EEF1F6; --v-muted: #9AA7BB;
+  --v-g1: #F8DAD4; --v-g2: #E3A59C; --v-g3: #A9BEDD; --v-soft: #F1CBC4; --v-ac: #A9C1E6; --v-ac2: #E9A99F; --v-tint: #1C2C4C; --v-tint2: #2A2436;
+  --v-on-grad: #1F3E66;
+  color-scheme: dark;
+}
+
+/* fundo da tela: tom da marca em cima e embaixo, claro no meio */
+:root, :root[data-bb-theme="light"] { --v-bg-top: #D6E2F4; --v-bg-mid: #FCFDFF; --v-bg-bot: #F7DCD6; }
+:root[data-bb-theme="dark"] { --v-bg-top: #16264A; --v-bg-mid: #0D1626; --v-bg-bot: #2A1E2A; }
+
+/* Agenda: card colorido pelo STATUS (fica por último e com prioridade para o tema v2 não sobrescrever) */
+html :is(.cal-ev, .week-ev, .mt-ev).st-agendado   { background: rgba(var(--st-agendado), .20) !important;   box-shadow: inset 4px 0 0 rgb(var(--st-agendado)) !important;   border-color: rgba(var(--st-agendado), .45) !important; }
+html :is(.cal-ev, .week-ev, .mt-ev).st-confirmado { background: rgba(var(--st-confirmado), .24) !important; box-shadow: inset 4px 0 0 rgb(var(--st-confirmado)) !important; border-color: rgba(var(--st-confirmado), .5) !important; }
+html :is(.cal-ev, .week-ev, .mt-ev).st-concluido  { background: rgba(var(--st-concluido), .20) !important;  box-shadow: inset 4px 0 0 rgb(var(--st-concluido)) !important;  border-color: rgba(var(--st-concluido), .45) !important; opacity: 1 !important; }
+html :is(.cal-ev, .week-ev, .mt-ev).st-faltou     { background: rgba(var(--st-faltou), .24) !important;     box-shadow: inset 4px 0 0 rgb(var(--st-faltou)) !important;     border-color: rgba(var(--st-faltou), .5) !important; opacity: .95 !important; }
+html :is(.cal-ev, .week-ev, .mt-ev).st-cancelado  { background: rgba(var(--st-cancelado), .16) !important;  box-shadow: inset 4px 0 0 rgb(var(--st-cancelado)) !important;  border-color: rgba(var(--st-cancelado), .4) !important; opacity: .75 !important; }
+
+/* Agenda no celular: busca e filtro de status em linha inteira (o texto não corta) */
+@media (max-width: 600px) {
+  html.v2[data-bb-theme] .agenda-bar .search, html.v2[data-bb-theme] .agenda-bar .agenda-select { flex: 1 1 100%; width: 100%; }
+}
