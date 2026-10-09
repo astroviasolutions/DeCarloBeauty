@@ -19,12 +19,16 @@ export function commissionRate(type, item, barber) {
 }
 
 /** Monta os itens de venda com comissão calculada */
-export function priceItems(items, { services, products, barber }) {
+export function priceItems(items, { services, products, barber, materialReduces = false }) {
   return items.map((it) => {
-    if (it.type === 'package' || it.type === 'credit') return { ...it, commissionRate: 0, commission: 0 } // pago adiantado: comissão só na sessão
+    if (it.type === 'package' || it.type === 'credit' || it.type === 'surcharge') return { ...it, commissionRate: 0, commission: 0 } // pago adiantado / juros repassado: sem comissão
     const src = it.type === 'service' ? services.find((s) => s.id === it.refId) : products.find((p) => p.id === it.refId)
     const rate = commissionRate(it.type, src, barber)
-    return { ...it, commissionRate: rate, commission: round2(baseOf(it) * it.qty * rate / 100) }
+    // custo guardado na venda (relatórios de lucro): material do procedimento e custo do produto, por unidade
+    const material = it.type === 'service' ? Number(src?.materialCost || 0) : 0
+    const cost = it.type === 'product' ? Number(src?.cost || 0) : 0
+    const unitBase = Math.max(0, baseOf(it) - (materialReduces ? material : 0))
+    return { ...it, ...(material ? { material } : {}), ...(cost ? { cost } : {}), commissionBase: unitBase, commissionRate: rate, commission: round2(unitBase * it.qty * rate / 100) }
   })
 }
 /** Sessão de pacote: cobra R$ 0, mas a comissão sai sobre o valor da sessão (pacote ÷ sessões) */
@@ -39,6 +43,13 @@ export function applyDiscount(items, discount) {
   if (!discount || !subtotal) return items
   const f = Math.max(0, (subtotal - discount) / subtotal)
   return items.map((x) => (x.packageId ? x : { ...x, commission: round2(x.commission * f) }))
+}
+
+/** Taxa do cartão reduz a comissão (Ajustes): a profissional recebe sobre o líquido */
+export function applyCardFee(items, total, cardFee) {
+  if (!(cardFee > 0) || !(total > 0)) return items
+  const f = Math.max(0, (total - cardFee) / total)
+  return items.map((x) => ({ ...x, commission: round2(Number(x.commission || 0) * f) }))
 }
 
 /** Resumo de comissões por barbeiro num período */
@@ -85,7 +96,7 @@ export function adjustSale(sale, newDiscount, rules = {}) {
   const gsub = goods.reduce((a, x) => a + Number(x.price) * Number(x.qty), 0)
   const f = gsub ? Math.max(0, (gsub - Math.min(base, gsub)) / gsub) : 1
   const next = items.map((x) => {
-    const full = round2(baseOf(x) * Number(x.qty) * Number(x.commissionRate || 0) / 100)
+    const full = round2(Number(x.commissionBase ?? baseOf(x)) * Number(x.qty) * Number(x.commissionRate || 0) / 100) // mesma base da venda (já sem material, se for a regra)
     return { ...x, commission: x.type === 'extra' || x.packageId ? full : round2(full * f) }
   })
   return { items: next, subtotal, discount: disc, total: round2(subtotal - disc), commissionTotal: round2(next.reduce((a, x) => a + x.commission, 0)) }

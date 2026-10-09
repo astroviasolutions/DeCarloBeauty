@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { CalendarOff, Medal, Trash2, Trophy } from 'lucide-react'
 import { useStore } from '../state/Store'
-import { Avatar, Button, Field, Modal } from './ui'
+import { Avatar, Button, Field, Modal, useLimit } from './ui'
 import { Stars } from './Loyalty'
 import { commissionSummary } from '../lib/commission'
 import { cls, endOfMonth, fmtDate, money, relDay, startOfMonth, today, waLink } from '../lib/utils'
@@ -119,16 +119,18 @@ export function BlocksList({ barberId }) {
   const { data, actions } = useStore()
   const [edit, setEdit] = useState(null)
   const list = data.blocks.filter((b) => b.date >= today() && (!barberId || b.barberId === barberId)).sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')))
-  if (!list.length) return <p className="muted small">Nenhum bloqueio futuro.</p>
+  const { visible, more } = useLimit(list, 10, 'bloqueios') // lista longa (ex.: bloqueio diário): mostra 10 e o botão para ver todos
+  if (!list.length) return <p className="muted small">Nenhum bloqueio futuro. Use o botão Bloquear na Agenda para folgas, cursos ou horários fechados.</p>
   return (
     <div className="list compact">
-      {list.map((b) => (
+      {visible.map((b) => (
         <div key={b.id} className="sale-row clickable" role="button" tabIndex={0} onClick={() => setEdit(b)} title="Editar bloqueio">
           <span className="appt-time">{fmtDate(b.date)}</span>
           <span className="appt-info"><b>{b.reason}</b><small>{relDay(b.date)} · {b.start ? `${b.start}–${b.end}` : 'dia inteiro'}{!barberId ? ` · ${data.barbers.find((x) => x.id === b.barberId)?.name.split(' ')[0]}` : ''}</small></span>
           <button className="icon-btn sm" onClick={(e) => { e.stopPropagation(); actions.remove('blocks', b.id, 'Bloqueio removido') }} aria-label="Remover bloqueio"><Trash2 size={15} /></button>
         </div>
       ))}
+      {more}
       {edit && <BlockModal open edit={edit} barberId={barberId} onClose={() => setEdit(null)} />}
     </div>
   )
@@ -138,12 +140,13 @@ export function BlocksList({ barberId }) {
 export function WaitlistPanel({ date }) {
   const { data, actions } = useStore()
   const list = data.waitlist.filter((w) => w.status !== 'atendido' && (date ? w.date === date : w.date >= today())).sort((a, b) => a.date.localeCompare(b.date))
+  const { visible, more } = useLimit(list, 10, 'pedidos')
   if (!list.length) return <p className="muted small">Ninguém na lista de espera{date ? ' para este dia' : ''}.</p>
   const link = `${location.origin}${location.pathname}#/`
   const period = { manha: 'manhã', tarde: 'tarde', noite: 'noite', qualquer: 'qualquer horário' }
   return (
     <div className="list compact">
-      {list.map((w) => {
+      {visible.map((w) => {
         const b = data.barbers.find((x) => x.id === w.barberId)
         const svc = (w.serviceIds || []).map((id) => data.services.find((s) => s.id === id)?.name).filter(Boolean).join(' + ')
         const msg = fillMsg(data.settings, 'waitlist', { nome: w.clientName.split(' ')[0], data: `${relDay(w.date).toLowerCase()} (${fmtDate(w.date)})`, profissional: b ? ` com ${b.name.split(' ')[0]}` : '', link })
@@ -157,6 +160,7 @@ export function WaitlistPanel({ date }) {
           </div>
         )
       })}
+      {more}
     </div>
   )
 }

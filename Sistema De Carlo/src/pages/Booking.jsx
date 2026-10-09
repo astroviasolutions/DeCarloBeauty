@@ -103,7 +103,7 @@ export default function Booking() {
   useEffect(() => {
     if (myPhone.length < 10 || !pub) return
     let alive = true
-    actions.portal(myPhone).then((p) => alive && setPortal(p)).catch(() => {})
+    actions.bookingProfile(myPhone).then((p) => alive && setPortal(p)).catch(() => {})
     return () => { alive = false }
   }, [myPhone, pub, actions, done])
 
@@ -190,7 +190,7 @@ export default function Booking() {
         birthday: bdayISO || undefined, promo: promo ? { label: promo.label, pct: promo.pct } : null,
       })
       safeLS.set(ME_KEY, me)
-      if (rebook) { await actions.clientCancel(rebook.id, rebook.phone).catch(() => {}); setRebook(null) }
+      if (rebook) { await actions.clientCancel(rebook.id, rebook.token).catch(() => {}); setRebook(null) }
       setDone({ ...appt, barber: resolvedBarber, service, promo, rebooked: !!rebook })
     } catch (e2) {
       setErr(e2.message)
@@ -467,7 +467,7 @@ export default function Booking() {
                   <Field label="WhatsApp" required hint="Enviamos a confirmação por aqui.">
                     <input inputMode="tel" autoComplete="tel" value={maskPhone(me.phone)} onChange={(e) => setMe({ ...me, phone: onlyDigits(e.target.value) })} placeholder="(41) 99999-9999" />
                   </Field>
-                  {!portal?.client?.birthday && (
+                  {!portal && ( /* aniversário só para cliente nova: ficha existente só a clínica altera (segurança) */
                     <Field label="Aniversário (opcional)" hint={`Ganhe ${settings.birthdayDiscount || 15}% off no mês do seu aniversário.`}>
                       <input inputMode="numeric" value={bday.length > 2 ? `${onlyDigits(bday).slice(0, 2)}/${onlyDigits(bday).slice(2, 4)}` : bday} onChange={(e) => setBday(onlyDigits(e.target.value).slice(0, 4))} placeholder="dd/mm" />
                     </Field>

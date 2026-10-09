@@ -10,7 +10,8 @@ import { ComandaCheckout, comandaOf } from './Comanda'
 import ReceiptButtons from './Receipt'
 import ReviewButtons from './Review'
 import { addCredit, saveCredit } from '../lib/credit'
-import { canCharge as canChargeFn, cls, fmtDateLong, fmtPhone, freeSlots, maskPhone, money, onlyDigits, relDay, today, toHHMM, toMin, waLink, weekday , PAYMENTS, parseMoney } from '../lib/utils'
+import { canCharge as canChargeFn, cls, deskCan, fmtDateLong, freeSlots, isDesk, maskPhone, money, onlyDigits, phoneLabel, relDay, today, toHHMM, toMin, waLink, weekday, parseMoney, payLabel } from '../lib/utils'
+import ClientPhone from './ClientPhone'
 import { msg as fillMsg } from '../lib/messages'
 import { db, isDemo } from '../data'
 import { doesService, totalDuration } from '../lib/commission'
@@ -27,13 +28,17 @@ export function serviceNames(appt, services) {
 }
 
 /** Detalhe do agendamento + ações */
-export function AppointmentModal({ appt, onClose, canCharge = true }) {
+export function AppointmentModal({ appt: raw, onClose, canCharge = true }) {
   const { data, actions, session } = useStore()
+  // sempre a versão atual (depois de editar observação/status a tela mostra o que foi salvo)
+  const appt = raw ? (data.appointments.find((a) => a.id === raw.id) || raw) : null
   const [charging, setCharging] = useState(false)
   const [ficha, setFicha] = useState(false)
   const [port, setPort] = useState(false)
   const [editing, setEditing] = useState(false)
   const [pinging, setPinging] = useState(false)
+  const [noteEd, setNoteEd] = useState(null) // texto da observação em edição (null = fechado)
+  const [noteBusy, setNoteBusy] = useState(false)
   const ping = async () => {
     setPinging(true)
     try {
@@ -46,7 +51,12 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
   const barber = data.barbers.find((b) => b.id === appt.barberId)
   const svc = serviceNames(appt, data.services)
   const open = !['concluido', 'cancelado', 'faltou'].includes(appt.status)
-  const set = async (status, msg) => { await actions.updateAppointment(appt.id, { status }, msg); onClose() }
+  const set = async (status, msg) => {
+    await actions.updateAppointment(appt.id, { status }, msg)
+    // cancelou: o pacote reservado neste agendamento (ainda não pago e sem sessão usada) é excluído
+    if (status === 'cancelado') for (const p of (data.packages || []).filter((x) => x.appointmentId === appt.id && x.payment === 'pendente' && (x.items || []).every((i) => !Number(i.used || 0)))) await actions.remove('packages', p.id, 'Pacote reservado excluído')
+    onClose()
+  }
   // todos os horários da cliente no mesmo dia vão juntos na mensagem
   const sameDay = data.appointments.filter((a) => a.date === appt.date && ['agendado', 'confirmado'].includes(a.status) && (a.clientId ? a.clientId === appt.clientId : a.clientName === appt.clientName)).sort((a, b) => a.time.localeCompare(b.time))
   const lines = (sameDay.length ? sameDay : [appt]).map((a) => `• ${a.time} ${serviceNames(a, data.services)} com ${data.barbers.find((b) => b.id === a.barberId)?.name.split(' ')[0] || ''}`).join('\n')
@@ -56,15 +66,16 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
   const alerts = anamneseAlerts(client?.anamnese)
   const hasPhone = onlyDigits(appt.clientPhone).length >= 10
   const nPhotos = data.photos.filter((p) => p.clientId === appt.clientId).length
-  if (ficha && client) return <ClientModal c={client} restricted={session?.role !== 'admin'} initialTab={typeof ficha === 'string' ? ficha : 'cadastro'} onClose={() => setFicha(false)} />
+  if (ficha && client) return <ClientModal c={client} restricted={session?.role === 'barber'} initialTab={typeof ficha === 'string' ? ficha : 'cadastro'} onClose={() => setFicha(false)} />
   if (port && client) return <PortfolioModal client={client} photos={data.photos} onClose={() => setPort(false)} />
 
-  if (editing) return <NewAppointmentModal open edit={appt} lockBarber={session?.role !== 'admin'} onClose={() => { setEditing(false); onClose() }} />
+  if (editing) return <NewAppointmentModal open edit={appt} lockBarber={session?.role === 'barber'} onClose={() => { setEditing(false); onClose() }} />
 
-  const isAdmin = session?.role === 'admin'
   const sale = data.sales?.find((s) => s.id === appt.saleId) || data.sales?.find((s) => s.appointmentId === appt.id)
-  const comanda = comandaOf(data.appointments, appt)
+  const canFix = deskCan(data.settings, session, 'fixSale') // corrigir atendimento já cobrado: gestão (ou recepção, se liberado)
+  const desk = isDesk(session) // gestão ou recepção
 
+  const comanda = comandaOf(data.appointments, appt)
   if (charging) {
     return (
       <Modal open onClose={() => setCharging(false)} title={`${charging === 'fix' ? 'Corrigir' : charging === 'comanda' ? 'Comanda' : 'Cobrar'} · ${appt.clientName}`} wide>
@@ -83,7 +94,7 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
       )}
       <div className="appt-detail">
         <div className="appt-head">
-          <div><h4>{appt.clientName}</h4>{hasPhone ? <a href={`tel:${appt.clientPhone}`}>{fmtPhone(appt.clientPhone)}</a> : <small className="muted">Contato visível só para a gestão</small>}</div>
+          <div><h4>{appt.clientName}</h4><ClientPhone clientId={appt.clientId} phone={appt.clientPhone} last4={appt.clientPhoneLast4 || client?.phoneLast4} /></div>
           <StatusBadge status={appt.status} />
         </div>
         {alerts.length > 0 && <div className="an-alerts"><b>Atenção na ficha</b>{alerts.map((t) => <span key={t} className="badge badge-warn">{t}</span>)}</div>}
@@ -103,15 +114,24 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
               {prods.map((i, k) => <span key={`p${k}`}><em>{i.qty > 1 ? `${i.qty}x ` : ''}{i.name}</em><i>+{money(i.price * i.qty)}</i></span>)}
               {extras.map((i, k) => <span key={`e${k}`}><em>{i.name}</em><i>+{money(i.price)}</i></span>)}
               {Number(sale.discount) > 0 && <span><em>{sale.benefit?.label && Number(sale.benefit.amount) >= Number(sale.discount) ? sale.benefit.label : 'Desconto'}</em><i>-{money(sale.discount)}</i></span>}
-              <span className="tot"><em>Total pago{sale.payment ? ` · ${PAYMENTS[sale.payment] || sale.payment}` : ''}</em><i>{money(sale.total)}</i></span>
+              <span className="tot"><em>Total pago{sale.payment ? ` · ${payLabel(sale)}` : ''}</em><i>{money(sale.total)}</i></span>
               <ReceiptButtons sales={data.sales.filter((s) => s.date === sale.date && (sale.clientId ? s.clientId === sale.clientId : s.id === sale.id))} phone={appt.clientPhone} />
               <ReviewButtons sales={[sale]} phone={appt.clientPhone} />
             </div>
           )
         })()}
-        {appt.notes && <p className="appt-notes"><b>Observações:</b> {appt.notes}</p>}
-        {client && Number(client.credit || 0) > 0.009 && <p className="appt-notes"><b>Crédito em haver:</b> {money(Number(client.credit))}{isAdmin ? ' · usar em "Saldo da cliente" ao cobrar' : ''}{isAdmin && <> · <button type="button" className="link" onClick={() => setFicha('creditos')}>abrir créditos</button></>}</p>}
-        {client && (isAdmin || (data.packages || []).some((p) => p.clientId === client.id && p.active)) && <ClientPackages client={client} canSell={isAdmin} barberId={appt.barberId} />}
+        {/* observações do atendimento: editáveis a qualquer momento (também depois de concluído) */}
+        {noteEd !== null ? (
+          <div className="appt-notes">
+            <b>Observações</b>
+            <textarea rows={3} value={noteEd} onChange={(e) => setNoteEd(e.target.value)} autoFocus placeholder="Ex.: alergia, preferência, pedido especial" />
+            <div className="foot-row"><Button size="sm" variant="ghost" onClick={() => setNoteEd(null)}>Cancelar</Button><Button size="sm" disabled={noteBusy} onClick={async () => { setNoteBusy(true); try { await actions.updateAppointment(appt.id, { notes: noteEd.trim() }, 'Observação salva'); setNoteEd(null) } finally { setNoteBusy(false) } }}>{noteBusy ? 'Salvando…' : 'Salvar observação'}</Button></div>
+          </div>
+        ) : appt.notes
+          ? <p className="appt-notes"><b>Observações:</b> {appt.notes} · <button type="button" className="link" onClick={() => setNoteEd(appt.notes || '')}>editar</button></p>
+          : <p className="appt-notes"><button type="button" className="link" onClick={() => setNoteEd('')}>+ Adicionar observação</button></p>}
+        {client && Math.abs(Number(client.credit || 0)) > 0.009 && <p className="appt-notes"><b>{Number(client.credit) > 0 ? 'Crédito em haver' : 'Deve (fiado)'}:</b> {money(Math.abs(Number(client.credit)))}{Number(client.credit) > 0 ? ' · usar em "Saldo da cliente" ao cobrar' : ''} · <button type="button" className="link" onClick={() => setFicha('creditos')}>abrir créditos</button></p>}
+        {client && (desk || (data.packages || []).some((p) => p.clientId === client.id && p.active)) && <ClientPackages client={client} canSell={desk} barberId={appt.barberId} />}
         {client && (
           <div className="appt-links">
             <Button variant="ghost" size="sm" icon={ClipboardList} onClick={() => setFicha(true)}>Ficha da cliente</Button>
@@ -123,10 +143,10 @@ export function AppointmentModal({ appt, onClose, canCharge = true }) {
           {hasPhone && <a className="btn btn-wa" href={waLink(appt.clientPhone, reminder)} target="_blank" rel="noreferrer"><MessageCircle size={18} /> Lembrar no WhatsApp</a>}
           {open && <Button variant="ghost" icon={BellRing} disabled={pinging} onClick={ping}>{pinging ? 'Enviando…' : 'Notificar no celular'}</Button>}
           {open && <Button variant="ghost" icon={Pencil} onClick={() => setEditing(true)}>Editar</Button>}
-          {!open && sale && isAdmin && <Button variant="ghost" icon={Pencil} onClick={() => setCharging('fix')}>Corrigir atendimento</Button>}
+          {!open && sale && canFix && <Button variant="ghost" icon={Pencil} onClick={() => setCharging('fix')}>Corrigir atendimento</Button>}
           {open && appt.status === 'agendado' && <Button variant="ghost" icon={Check} onClick={() => set('confirmado', 'Confirmado')}>Confirmar</Button>}
-          {open && canCharge && isAdmin && comanda.length > 1 && <Button icon={CircleCheck} onClick={() => setCharging('comanda')}>Fechar comanda ({comanda.length} atendimentos)</Button>}
-          {open && canCharge && canChargeFn(data.settings, session) && <Button variant={comanda.length > 1 && isAdmin ? 'ghost' : 'primary'} icon={CircleCheck} onClick={() => setCharging(true)}>{comanda.length > 1 && isAdmin ? 'Cobrar só este' : 'Concluir e cobrar'}</Button>}
+          {open && canCharge && desk && comanda.length > 1 && <Button icon={CircleCheck} onClick={() => setCharging('comanda')}>Fechar comanda ({comanda.length} atendimentos)</Button>}
+          {open && canCharge && canChargeFn(data.settings, session) && <Button variant={comanda.length > 1 && desk ? 'ghost' : 'primary'} icon={CircleCheck} onClick={() => setCharging(true)}>{comanda.length > 1 && desk ? 'Cobrar só este' : 'Concluir e cobrar'}</Button>}
           {open && <Button variant="ghost" icon={UserX} onClick={() => set('faltou', 'Marcado como falta')}>Faltou</Button>}
           {open && <Button variant="danger" icon={Ban} onClick={() => set('cancelado', 'Agendamento cancelado')}>Cancelar</Button>}
         </div>
@@ -144,8 +164,9 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
   const [busy, setBusy] = useState([])
   const [cq, setCq] = useState('')
   const [extra, setExtra] = useState(false) // encaixe fora do horário (só a equipe vê)
+  const [encDur, setEncDur] = useState('') // encaixe: quanto tempo leva (min); vazio = duração do serviço
   const [overlap, setOverlap] = useState(false) // sobrepor horário (tempo de pausa, ex.: tinta agindo)
-  useEffect(() => { if (open && !edit) setF((x) => ({ ...x, date: initialDate || x.date, time: initialTime || '', barberId: initialBarber || x.barberId || data.barbers.find((b) => b.active)?.id, serviceIds: x.serviceIds.length ? x.serviceIds : [data.services.find((s) => s.active && doesService(data.barbers.find((b) => b.id === (initialBarber || x.barberId)), s.id))?.id].filter(Boolean) })); if (open && !edit && initialTime) { const h = data.settings.hours?.[weekday(initialDate || today())]; setExtra(!h || toMin(initialTime) < toMin(h[0]) || toMin(initialTime) >= toMin(h[1])) } }, [open, initialDate, initialTime, initialBarber]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open && !edit) setF((x) => ({ ...x, date: initialDate || x.date, time: initialTime || '', barberId: initialBarber || x.barberId || data.barbers.find((b) => b.active)?.id, serviceIds: [] /* abre sem serviço marcado (antes marcava o 1º da lista) */ })); if (open && !edit && initialTime) { const h = data.settings.hours?.[weekday(initialDate || today())]; setExtra(!h || toMin(initialTime) < toMin(h[0]) || toMin(initialTime) >= toMin(h[1])) } }, [open, initialDate, initialTime, initialBarber]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (open && f.date) actions.busy(f.date).then(setBusy) }, [open, f.date, actions])
 
   const isAdmin = !lockBarber
@@ -160,7 +181,7 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
   const [usePkg, setUsePkg] = useState(true)
   const pkgClientId = edit ? edit.clientId : (f.clientId || data.clients.find((c) => onlyDigits(f.phone).length >= 10 && onlyDigits(c.phone) === onlyDigits(f.phone))?.id)
   const pkgOf = (id) => (pkgClientId ? packageFor(data.packages, pkgClientId, id) : null)
-  const priceOf = (id) => { if (usePkg && pkgOf(id)) return 0; const v = prices[id]; return v !== undefined && v !== '' ? Number(String(v).replace(',', '.')) || 0 : Number(svcOf(id)?.price || 0) }
+  const priceOf = (id) => { if (usePkg && pkgOf(id)) return 0; const v = prices[id]; return v !== undefined && v !== '' ? parseMoney(v) : Number(svcOf(id)?.price || 0) }
   const mainIds = f.serviceIds.filter((id) => bOf(id) === f.barberId)
   const chosen = mainIds.map(svcOf).filter(Boolean)
   const barber = data.barbers.find((b) => b.id === f.barberId)
@@ -168,9 +189,9 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
   const others = [...new Set(f.serviceIds.map(bOf).filter((b) => b !== f.barberId))]
   const [sq, setSq] = useState('')
   const [cat, setCat] = useState('')
-  // categoria = início da descrição do serviço antes de " · " (ex.: "Facial · limpeza de pele")
-  const catOf = (s) => ((s.description || '').includes(' · ') ? s.description.split(' · ')[0].trim() : '')
-  const offered =data.services.filter((s) => s.active && (isAdmin || doesService(barber, s.id)))
+  const [svcAll, setSvcAll] = useState(false) // lista longa de serviços: recolhida (12 primeiros) até pedir "Mostrar todos"
+  const catOf = (s) => (s.category ? String(s.category).trim() : (s.description || '').split(' · ')[0].trim())
+  const offered = data.services.filter((s) => s.active && (isAdmin || doesService(barber, s.id)))
   // serviço marcado que a profissional não faz some da seleção (antes travava o botão Agendar sem aviso)
   const okFor = (id) => doesService(data.barbers.find((b) => b.id === bOf(id)), id)
   useEffect(() => { if (!isAdmin && barber && f.serviceIds.some((id) => !okFor(id))) setF((x) => ({ ...x, serviceIds: x.serviceIds.filter(okFor), time: '' })) }, [barber, f.serviceIds]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -191,9 +212,9 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
     const phone = edit ? (f.phone || edit.clientPhone) : f.phone
     if (edit) {
       if (isAdmin && edit.clientId && (clientName !== edit.clientName || onlyDigits(phone) !== onlyDigits(edit.clientPhone))) await actions.upsert('clients', { id: edit.clientId, name: clientName, phone: onlyDigits(phone) }, null)
-      await actions.updateAppointment(edit.id, { clientName, ...(isAdmin ? { clientPhone: onlyDigits(phone) } : {}), notes: notesOut, barberId: f.barberId, serviceIds: mainIds, date: f.date, time: f.time, duration: Number(service.duration), total: Number(service.price) }, 'Agendamento atualizado')
+      await actions.updateAppointment(edit.id, { clientName, ...(isAdmin ? { clientPhone: onlyDigits(phone) } : {}), notes: notesOut, barberId: f.barberId, serviceIds: mainIds, date: f.date, time: f.time, duration: effDur, total: Number(service.price), ...(extra ? { force: true } : {}) }, 'Agendamento atualizado')
     } else {
-      const r = await actions.staffBook({ clientId: picked ? f.clientId : null, clientName, clientPhone: phone, barberId: f.barberId, serviceIds: mainIds, date: f.date, time: f.time, duration: Number(service.duration), total: Number(service.price), notes: notesOut || '' })
+      const r = await actions.staffBook({ clientId: picked ? f.clientId : null, clientName, clientPhone: phone, barberId: f.barberId, serviceIds: mainIds, date: f.date, time: f.time, duration: effDur, total: Number(service.price), notes: notesOut || '', force: extra })
       const catalog = mainIds.reduce((a, id) => a + Number(svcOf(id)?.price || 0), 0)
       if (r?.id && Math.abs(catalog - service.price) > 0.001) await actions.updateAppointment(r.id, { total: Number(service.price) })
       if (crAmount > 0) {
@@ -203,7 +224,14 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
       }
       if (pkOn) {
         const client = picked ? { id: f.clientId, name: clientName } : await actions.upsertClient({ name: clientName, phone })
-        await sellPackage(actions, { client, name: `${pkSessions} sessões · ${mainIds.map((id) => svcOf(id)?.name).join(' + ')}`, items: mainIds.map((id) => ({ serviceId: id, name: svcOf(id)?.name || 'Serviço', qty: pkSessions, used: 0 })), price: pkPrice, payment: pk.payment, barberId: f.barberId })
+        // só RESERVA: o pacote entra no carrinho ao cobrar este atendimento (como qualquer venda)
+        try {
+          await sellPackage(actions, { client, name: `${pkSessions} sessões · ${mainIds.map((id) => svcOf(id)?.name).join(' + ')}`, items: mainIds.map((id) => ({ serviceId: id, name: svcOf(id)?.name || 'Serviço', qty: pkSessions, used: 0 })), price: pkPrice, barberId: f.barberId, charge: false, appointmentId: r?.id || null })
+          if (r?.id) await actions.updateAppointment(r.id, { total: pkPrice, notes: `Sessão de pacote · pacote a cobrar ${money(pkPrice)}${f.notes ? ` · ${f.notes}` : ''}` })
+        } catch (e) {
+          // o horário já foi criado: avisa claramente para não ficar "meio feito"
+          actions.notify(`Horário criado, mas o pacote NÃO foi salvo (${e.message}). Abra a ficha da cliente → Pacotes → Vender pacote.`, 'bad')
+        }
       }
     }
     // outras profissionais: um agendamento para cada, com o valor combinado
@@ -225,7 +253,10 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
   const isBlock = (b) => Number(b.duration) >= 1440 || data.blocks.some((k) => k.barberId === barber?.id && k.date === f.date && (k.start || '00:00').slice(0, 5) === b.time)
   const clashes = (t, d) => busy.filter((b) => b.barberId === barber?.id && !(edit && f.date === edit.date && b.barberId === edit.barberId && b.time === edit.time) && t < toMin(b.time) + Number(b.duration) && t + d > toMin(b.time))
   const fits = (t, d) => { const c = clashes(t, d); return c.length < cap && !(c.length && c.some(isBlock)) }
-  const extraOk = free && tMin != null && service && fits(tMin, Number(service.duration))
+  // encaixe: sem limitação de horário (só avisa se encostar em outro atendimento) e com duração própria
+  const effDur = extra && Number(onlyDigits(encDur)) > 0 ? Number(onlyDigits(encDur)) : Number(service?.duration || 0)
+  const extraOk = free && tMin != null && service && (extra || fits(tMin, effDur))
+  const encWarn = extra && tMin != null && service ? clashes(tMin, effDur).map((b) => `${b.time} (até ${toHHMM(toMin(b.time) + Number(b.duration))})`) : []
   const keep = !!edit && f.date === edit.date && f.time === edit.time && f.barberId === edit.barberId && Number(service?.duration) <= Number(edit.duration)
   // por que não dá para agendar + sugestão de horário
   const mine = busy.filter((b) => b.barberId === barber?.id && !(edit && f.date === edit.date && b.barberId === edit.barberId && b.time === edit.time))
@@ -251,6 +282,7 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
     if (!edit && !(f.name || match)) return 'Informe o nome da cliente.'
     if (!edit && !picked && onlyDigits(f.phone).length < 10) return 'Informe o WhatsApp com DDD (ex.: 41 99999-9999).'
     if (!f.time) return free ? 'Digite o horário.' : (slots.length ? 'Escolha um horário livre.' : 'Sem horário livre no expediente. Ligue "Encaixe fora do horário" para marcar mesmo assim.')
+    if (extra) { const gb = others.findIndex(groupBad); return gb >= 0 ? `${data.barbers.find((b) => b.id === others[gb])?.name.split(' ')[0]} já tem atendimento às ${groupTime(others[gb], gb)}. Mude o horário dela.` : '' }
     const t = toMin(f.time)
     const h = hitAt(t, !free)
     const sug = suggest(t)
@@ -282,13 +314,14 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
             <div className="search"><Search size={16} /><input value={cq} onChange={(e) => setCq(e.target.value)} placeholder="Nome ou telefone" /></div>
             {cq.trim().length >= 2 && (() => {
               const t = cq.trim().toLowerCase(); const d = onlyDigits(cq)
-              const hits = data.clients.filter((c) => c.name.toLowerCase().includes(t) || (d.length >= 3 && onlyDigits(c.phone).includes(d))).slice(0, 6)
-              return <div className="client-hits">{hits.map((c) => <button key={c.id} type="button" onClick={() => { setF({ ...f, clientId: c.id, name: c.name, phone: onlyDigits(c.phone).startsWith('sem') ? '' : onlyDigits(c.phone) }); setCq('') }}><b>{c.name}</b><small>{onlyDigits(c.phone).length >= 10 ? fmtPhone(c.phone) : 'WhatsApp oculto'}</small></button>)}{!hits.length && <small className="muted">Nenhuma cliente encontrada. Preencha abaixo para cadastrar.</small>}</div>
+              // telefone oculto (profissional): acha pelos 4 últimos números
+              const hits = data.clients.filter((c) => c.name.toLowerCase().includes(t) || (d.length >= 3 && (onlyDigits(c.phone).includes(d) || (d.length <= 4 && String(c.phoneLast4 || '').endsWith(d))))).slice(0, 6)
+              return <div className="client-hits">{hits.map((c) => <button key={c.id} type="button" onClick={() => { setF({ ...f, clientId: c.id, name: c.name, phone: onlyDigits(c.phone).startsWith('sem') ? '' : onlyDigits(c.phone) }); setCq('') }}><b>{c.name}</b><small>{phoneLabel(c) || 'Sem WhatsApp'}</small></button>)}{!hits.length && <small className="muted">Nenhuma cliente encontrada. Preencha abaixo para cadastrar.</small>}</div>
             })()}
           </Field>
         )}
         {!edit && (picked
-          ? <Field label="Cliente cadastrada"><div className="picked-client"><b>{f.name}</b><small>{onlyDigits(f.phone).length >= 10 ? maskPhone(f.phone) : 'WhatsApp oculto pela privacidade'}</small><button type="button" className="link-btn" onClick={() => setF({ ...f, clientId: null, name: '', phone: '' })}>Trocar</button></div></Field>
+          ? <Field label="Cliente cadastrada"><div className="picked-client"><b>{f.name}</b>{(() => { const pc = data.clients.find((c) => c.id === f.clientId); return <small><ClientPhone clientId={f.clientId} phone={pc?.phone || f.phone} last4={pc?.phoneLast4} tel={false} /></small> })()}<button type="button" className="link-btn" onClick={() => setF({ ...f, clientId: null, name: '', phone: '' })}>Trocar</button></div></Field>
           : <Field label="WhatsApp do cliente" required><input inputMode="tel" value={maskPhone(f.phone)} onChange={(e) => setF({ ...f, phone: onlyDigits(e.target.value) })} placeholder="(41) 99999-9999" /></Field>)}
         <Field label="Nome" required hint={match && !edit ? `Cliente encontrado: ${match.name}` : ''}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder={match?.name || 'Nome do cliente'} /></Field>
         <Field label={`Serviços${service ? ` · ${money(service.price)} · ${service.duration} min` : ''}`} required className="span-2">
@@ -308,9 +341,21 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
                 </div>
               )
             })()}
-            {offered.filter((s) => f.serviceIds.includes(s.id) || ((!sq.trim() || s.name.toLowerCase().includes(sq.trim().toLowerCase())) && (!cat || catOf(s) === cat))).map((s) => (
-              <button key={s.id} type="button" className={`pill ${f.serviceIds.includes(s.id) ? 'on' : ''}`} onClick={() => toggleSvc(s.id)}>{s.name}</button>
-            ))}
+            {(() => {
+              const list = offered.filter((s) => f.serviceIds.includes(s.id) || ((!sq.trim() || s.name.toLowerCase().includes(sq.trim().toLowerCase())) && (!cat || catOf(s) === cat)))
+              // com busca ou categoria mostra tudo o que achou; sem filtro, lista longa fica recolhida (os marcados sempre aparecem)
+              const LIMIT = 12
+              const filtered = !!(sq.trim() || cat)
+              const long = !filtered && list.length > LIMIT
+              const shown = long && !svcAll ? list.filter((s, i) => i < LIMIT || f.serviceIds.includes(s.id)) : list
+              return <>
+                {shown.map((s) => (
+                  <button key={s.id} type="button" className={`pill ${f.serviceIds.includes(s.id) ? 'on' : ''}`} onClick={() => toggleSvc(s.id)}>{s.name}</button>
+                ))}
+                {long && <button type="button" className="link show-more" onClick={() => setSvcAll(!svcAll)}>{svcAll ? 'Recolher lista' : `Mostrar todos (${list.length} serviços)`}</button>}
+                {filtered && !list.length && <p className="muted small">Nenhum serviço encontrado.</p>}
+              </>
+            })()}
           </div>
         </Field>
         <Field label="Profissional" required>
@@ -329,24 +374,23 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
         {picked && (data.packages || []).some((p) => p.clientId === f.clientId) && <div className="span-2"><ClientPackages client={{ id: f.clientId, name: f.name }} canSell={false} /></div>}
         {isAdmin && !edit && (
           <div className="span-2 ov-box">
-            <label className="toggle-row"><span><b>Pagou adiantado (crédito em haver)</b><small>{crClient ? (crNow > 0 ? `Hoje ela tem ${money(crNow)} de crédito.` : 'Hoje ela não tem crédito.') : 'O valor entra no caixa agora e fica como crédito da cliente.'} O crédito é usado em "Saldo da cliente" na cobrança.</small></span><span className="switch"><input type="checkbox" checked={cr.on} onChange={(e) => setCr({ ...cr, on: e.target.checked })} /><span /></span></label>
+            <label className="toggle-row"><span><b>Pagou adiantado (crédito em haver)</b><small>{crClient ? (crNow > 0 ? `Hoje ela tem ${money(crNow)} de crédito.` : crNow < 0 ? `Hoje ela deve ${money(-crNow)} (o valor quita a dívida primeiro).` : 'Hoje ela não tem crédito.') : 'O valor fica como crédito da cliente e é abatido no caixa.'} O crédito é usado em "Saldo da cliente" na cobrança.</small></span><span className="switch"><input type="checkbox" checked={cr.on} onChange={(e) => setCr({ ...cr, on: e.target.checked })} /><span /></span></label>
             {cr.on && (
               <div className="form-grid mt-sm">
                 <Field label="Valor recebido (R$)"><input inputMode="decimal" value={cr.amount} onChange={(e) => setCr({ ...cr, amount: e.target.value })} placeholder="0,00" /></Field>
                 <Field label="Pagamento"><select value={cr.payment} onChange={(e) => setCr({ ...cr, payment: e.target.value })}><option value="pix">Pix</option><option value="dinheiro">Dinheiro</option><option value="debito">Débito</option><option value="credito">Crédito</option></select></Field>
-                {crAmount > 0 && <p className="muted small span-2">Depois de agendar: crédito de {money(Math.max(0, crNow) + crAmount)}.</p>}
+                {crAmount > 0 && <p className="muted small span-2">Depois de agendar: {crNow < 0 ? `quita ${money(Math.min(crAmount, -crNow))} da dívida e ` : ''}crédito de {money(Math.max(0, crNow) + Math.max(0, crAmount - Math.max(0, -crNow)))}.</p>}
               </div>
             )}
           </div>
         )}
         {isAdmin && !edit && mainIds.length > 0 && (
           <div className="span-2 ov-box">
-            <label className="toggle-row"><span><b>Vender pacote</b><small>A cliente paga agora o pacote inteiro. Esta e as próximas sessões são abatidas no caixa sem cobrar de novo.</small></span><span className="switch"><input type="checkbox" checked={pk.on} onChange={(e) => setPk({ ...pk, on: e.target.checked })} /><span /></span></label>
+            <label className="toggle-row"><span><b>Vender pacote</b><small>O pacote fica reservado e é cobrado (valor integral) quando você concluir e cobrar este atendimento, na forma de pagamento que a cliente escolher. Esta e as próximas sessões são abatidas sem cobrar de novo.</small></span><span className="switch"><input type="checkbox" checked={pk.on} onChange={(e) => setPk({ ...pk, on: e.target.checked })} /><span /></span></label>
             {pk.on && (
               <div className="form-grid mt-sm">
                 <Field label="Sessões de cada serviço"><input inputMode="numeric" value={pk.sessions} onChange={(e) => setPk({ ...pk, sessions: onlyDigits(e.target.value) })} /></Field>
                 <Field label="Valor do pacote (R$)"><input inputMode="decimal" value={pk.price} onChange={(e) => setPk({ ...pk, price: e.target.value })} placeholder="0,00" /></Field>
-                <Field label="Pagamento"><select value={pk.payment} onChange={(e) => setPk({ ...pk, payment: e.target.value })}><option value="pix">Pix</option><option value="dinheiro">Dinheiro</option><option value="debito">Débito</option><option value="credito">Crédito</option></select></Field>
                 <p className="muted small span-2">{mainIds.map((id) => svcOf(id)?.name).join(' + ')} · {pkSessions} sessões{pkPrice > 0 ? ` · comissão de cada sessão sobre ${money(pkPrice / (pkSessions * mainIds.length))}` : ' · informe o valor'}</p>
               </div>
             )}
@@ -379,9 +423,13 @@ export function NewAppointmentModal({ open, onClose, date: initialDate, time: in
       <label className="toggle-row mb-sm"><span><b>Encaixe fora do horário</b><small>Ex.: bem cedo ou depois de fechar. Só a equipe vê; a cliente não consegue marcar nesses horários pelo site.</small></span><span className="switch"><input type="checkbox" checked={extra} onChange={(e) => setExtra(e.target.checked)} /><span /></span></label>
       {canOverlap && <label className="toggle-row mb-sm"><span><b>Sobrepor horário (tempo de pausa)</b><small>Ex.: enquanto a tinta age, marque outra cliente no mesmo horário. Até {Math.max(2, Number(ovCfg.max || 2))} atendimentos ao mesmo tempo. Só a equipe usa; o site continua normal.</small></span><span className="switch"><input type="checkbox" checked={overlap} onChange={(e) => setOverlap(e.target.checked)} /><span /></span></label>}
       {free && (
-        <Field label={ovOn ? 'Horário (pode sobrepor)' : 'Horário do encaixe'} required >
-          <input type="time" value={f.time} onChange={(e) => setF({ ...f, time: e.target.value })} />
-        </Field>
+        <div className="form-grid">
+          <Field label={ovOn && !extra ? 'Horário (pode sobrepor)' : 'Horário do encaixe'} required >
+            <input type="time" value={f.time} onChange={(e) => setF({ ...f, time: e.target.value })} />
+          </Field>
+          {extra && <Field label="Quanto tempo leva (min)" hint={`Vazio = ${Number(service?.duration || 0)} min do serviço`}><input inputMode="numeric" value={encDur} onChange={(e) => setEncDur(onlyDigits(e.target.value).slice(0, 3))} placeholder={String(Number(service?.duration || 0) || 30)} /></Field>}
+          {extra && f.time && service && <p className="muted small span-2">Encaixe das {f.time} às {toHHMM(toMin(f.time) + effDur)} ({effDur} min).{encWarn.length ? ` Atenção: encosta em outro atendimento às ${encWarn.join(', ')} — o encaixe é permitido mesmo assim.` : ''}</p>}
+        </div>
       )}
       {!free && <Field label="Horário livre" required>
         {keep && <p className="muted small">Mantendo {f.time}. Para mudar, escolha outro horário abaixo.</p>}

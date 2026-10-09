@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { db, isDemo } from '../data'
-import { safeLS } from '../lib/utils'
+import { safeLS, serverNowMs, setServerTime } from '../lib/utils'
 import { disablePush } from '../lib/push'
 
 const Ctx = createContext(null)
@@ -21,6 +21,8 @@ export function StoreProvider({ children }) {
   }, [])
 
   const loadPublic = useCallback(async () => {
+    // acerta o relógio pela hora do servidor antes de montar a tela (sem a função no banco, segue o do aparelho)
+    if (db.serverTime) await db.serverTime().then(setServerTime).catch(() => {})
     try { setPub(await db.loadPublic()) } catch (e) { setError(e.message) }
   }, [])
 
@@ -30,15 +32,16 @@ export function StoreProvider({ children }) {
   // depois de cada ação e na atualização automática busca apenas o que mudou.
   const syncRef = useRef(null)
   const fullRef = useRef(0)
-  const refresh = useCallback(async (mode = 'delta') => {
+  const refresh = useCallback(async (mode = 'delta', touched = []) => {
     try {
-      const stamp = new Date(Date.now() - 120000).toISOString() // margem para relógios diferentes
+      const stamp = new Date(serverNowMs() - 120000).toISOString() // hora do servidor (PC com relógio errado não perde mudanças) + margem
       if (mode === 'full' || !syncRef.current || !db.loadChanges) {
         const all = await db.loadAll(sessionRef.current); setData(all); setPub(await db.loadPublic()); fullRef.current = Date.now()
       } else {
-        const [small, ch] = await Promise.all([mode === 'poll' ? null : db.loadSmall(sessionRef.current), db.loadChanges(syncRef.current, sessionRef.current)])
+        // depois de uma ação: tabelas pequenas + as grandes que a ação mexeu (touched); na atualização automática, só o que mudou
+        const [small, ch] = await Promise.all([mode === 'poll' ? null : db.loadSmall(sessionRef.current, touched), db.loadChanges(syncRef.current, sessionRef.current)])
         const up = (list = [], rows = []) => { if (!rows.length) return list; const m = new Map(list.map((x) => [x.id, x])); rows.forEach((r) => m.set(r.id, { ...m.get(r.id), ...r })); return [...m.values()] }
-        setData((d) => d && ({ ...d, ...(small || {}), appointments: up(d.appointments, ch.appointments), clients: up(d.clients, ch.clients), sales: up(d.sales, ch.sales), announcements: ch.announcements || d.announcements }))
+        setData((d) => d && ({ ...d, ...(small || {}), appointments: up(d.appointments, ch.appointments), clients: up(d.clients, ch.clients), sales: up(d.sales, ch.sales), announcements: small?.announcements || up(d.announcements, ch.announcements) }))
       }
       syncRef.current = stamp
     } catch (e) { setError(e.message) }
@@ -50,8 +53,8 @@ export function StoreProvider({ children }) {
   }, [])
   useEffect(() => { if (session) { syncRef.current = null; refresh('full') } }, [session, refresh])
 
-  const run = useCallback(async (fn, okMsg, mode = 'delta') => {
-    try { const r = await fn(); await refresh(mode); if (okMsg) notify(okMsg); return r }
+  const run = useCallback(async (fn, okMsg, mode = 'delta', touched = []) => {
+    try { const r = await fn(); await refresh(mode, touched); if (okMsg) notify(okMsg); return r }
     catch (e) { notify(e.message || 'Algo deu errado', 'bad'); throw e }
   }, [refresh, notify])
 
@@ -62,8 +65,9 @@ export function StoreProvider({ children }) {
     book: async (p) => { const r = await db.book(p); if (session) await refresh(); return r },
     staffBook: (p) => run(() => db.book({ ...p, source: 'balcao' }), 'Agendamento criado'),
     updateAppointment: (id, patch, msg) => run(() => db.updateAppointment(id, patch), msg),
-    upsert: (table, row, msg = 'Salvo') => run(() => db.upsert(table, row), msg),
-    remove: async (table, id, msg = 'Removido') => { await run(() => db.remove(table, id), msg); setData((d) => d && Array.isArray(d[table]) ? { ...d, [table]: d[table].filter((x) => x.id !== id) } : d) },
+    upsert: (table, row, msg = 'Salvo') => run(() => db.upsert(table, row), msg, 'delta', [table]),
+    patch: (table, id, fields, msg = null) => run(() => db.patch(table, id, fields), msg, 'delta', [table]),
+    remove: async (table, id, msg = 'Removido') => { await run(() => db.remove(table, id), msg, 'delta', [table]); setData((d) => d && Array.isArray(d[table]) ? { ...d, [table]: d[table].filter((x) => x.id !== id) } : d) },
     saveSettings: (s) => run(() => db.saveSettings(s), 'Configurações salvas'),
     upsertClient: (c) => run(() => db.upsertClient(c)),
     createSale: (s) => run(() => db.createSale(s), 'Venda finalizada'),
@@ -83,10 +87,17 @@ export function StoreProvider({ children }) {
     /** volta ao painel: completo se ficou mais de 30 min fora */
     resume: () => refresh(Date.now() - fullRef.current > 30 * 60000 ? 'full' : 'poll'),
     markRead: async (id) => { await db.markRead(id, session?.barberId); await refresh() },
-    linkStaff: (email, barberId) => run(() => db.linkStaff(email, barberId), 'Acesso vinculado'),
+    linkStaff: (email, barberId) => run(() => db.linkStaff(email, barberId), 'Acesso vinculado', 'delta', ['staff']),
+    // recepção e WhatsApp da cliente
+    createReceptionLogin: (email, password, name) => run(() => db.createStaffLogin(email, password, null, { role: 'reception', name }), 'Acesso da recepção criado. Envie os dados para ela.', 'delta', ['staff']),
+    linkReception: (email, name) => run(() => db.linkReception(email, name), 'Recepção vinculada', 'delta', ['staff']),
+    unlinkReception: (email) => run(() => db.unlinkReception(email), 'Acesso da recepção removido', 'delta', ['staff']),
+    setProductUnit: (id, unit) => run(() => db.setProductUnit(id, unit), 'Unidade do produto atualizada', 'delta', ['products']),
+    setClientPhone: (id, phone) => run(() => db.setClientPhone(id, phone), 'WhatsApp atualizado', 'delta', ['clients']),
     createStaffLogin: (email, password, barberId) => run(() => db.createStaffLogin(email, password, barberId), 'Acesso criado. Envie os dados para ela.', 'full'),
-    portal: (phone) => db.portal(phone),
-    clientCancel: async (id, phone) => { await db.clientCancel(id, phone); if (session) await refresh(); else await loadPublic() },
+    clientAccess: (p) => db.clientAccess(p), // Meus horários (link pessoal ou celular + aniversário)
+    bookingProfile: (phone) => db.bookingProfile(phone), // agendar: saudação e benefícios
+    clientCancel: async (id, token) => { await db.clientCancel(id, token); if (session) await refresh(); else await loadPublic() },
     joinWaitlist: async (w) => { const r = await db.joinWaitlist(w); if (session) await refresh(); return r },
     reviewTarget: (id) => db.reviewTarget(id),
     submitReview: async (r) => { await db.submitReview(r); if (session) await refresh(); else await loadPublic() },

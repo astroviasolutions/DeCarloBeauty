@@ -5,7 +5,7 @@ import { enableClientPush, isIOS, isStandalone, pushSupported } from '../lib/pus
 import { onlyDigits, safeLS } from '../lib/utils'
 
 /** Card para a cliente receber os lembretes no celular (1 dia, 1 hora e 15 min antes) */
-export default function ClientPush({ phone }) {
+export default function ClientPush({ phone, token }) {
   const key = `dcb:client-push:${onlyDigits(phone)}`
   const [st, setSt] = useState('off')
   const [busy, setBusy] = useState(false)
@@ -13,13 +13,13 @@ export default function ClientPush({ phone }) {
     if (!pushSupported()) { setSt(isIOS() && !isStandalone() ? 'ios-install' : 'unsupported'); return }
     if (Notification.permission === 'denied') setSt('denied')
     else if (Notification.permission === 'granted' && safeLS.get(key)) {
-      setSt('on'); enableClientPush(phone).catch(() => {}) // renova a ligação com o número
+      setSt('on'); enableClientPush(phone, token).catch(() => {}) // renova a ligação com o número
     }
   }, [key, phone])
   if (onlyDigits(phone).length < 10 || st === 'unsupported') return null
   const run = async () => {
     setBusy(true)
-    try { const r = await enableClientPush(phone); setSt(r); if (r === 'on') safeLS.set(key, 1) } catch { setSt('error') } finally { setBusy(false) }
+    try { const r = await enableClientPush(phone, token); setSt(r); if (r === 'on') safeLS.set(key, 1) } catch { setSt('error') } finally { setBusy(false) }
   }
   return (
     <div className="client-push">

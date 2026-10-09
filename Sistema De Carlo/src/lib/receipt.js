@@ -5,11 +5,11 @@ import { fmtDate, money, PAYMENTS, waLink } from './utils'
  * Comprovante de pagamento (recibo NÃO fiscal) de uma ou mais vendas da mesma cliente:
  * imprimir (impressora comum ou térmica) ou mandar no WhatsApp.
  */
-const payLabel = (p) => PAYMENTS[p] || p || '—'
+const payLabel = (s) => `${PAYMENTS[s.payment] || s.payment || '—'}${Number(s.installments) > 1 ? ` em ${s.installments}x` : ''}` // ex.: "Crédito em 3x"
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 
 function lines(sales, barbers) {
-  return sales.flatMap((s) => (s.items || []).map((i) => ({
+  return sales.flatMap((s) => (s.items || []).filter((i) => i.type !== 'supply').map((i) => ({ // insumo não aparece para a cliente
     name: `${Number(i.qty) > 1 ? `${i.qty}x ` : ''}${i.name}${i.packageId ? ' (sessão de pacote)' : ''}`,
     who: barbers.find((b) => b.id === s.barberId)?.name || '',
     value: Number(i.price) * Number(i.qty),
@@ -30,7 +30,7 @@ export function receiptText(sales, { barbers = [], settings = {} } = {}) {
     '',
     disc > 0 ? `Subtotal: ${money(sub)}\nDesconto: -${money(disc)}` : null,
     `*Total: ${money(total)}*`,
-    `Pagamento: ${[...new Set(sales.map((s) => payLabel(s.payment)))].join(', ')}`,
+    `Pagamento: ${[...new Set(sales.map((s) => payLabel(s)))].join(', ')}`,
     settings.address ? `\n${settings.address}` : null,
     'Obrigada pela preferência! 💗',
   ].filter((x) => x !== null).join('\n')
@@ -57,7 +57,7 @@ export function printReceipt(sales, { barbers = [], settings = {} } = {}) {
       ${disc > 0 ? `<tr><td>Subtotal</td><td class="r">${money(sub)}</td></tr><tr><td>Desconto</td><td class="r">-${money(disc)}</td></tr>` : ''}
       <tr class="tot"><td>Total</td><td class="r">${money(total)}</td></tr>
     </table>
-    <p>Pagamento: ${esc([...new Set(sales.map((s) => payLabel(s.payment)))].join(', '))}</p>
+    <p>Pagamento: ${esc([...new Set(sales.map((s) => payLabel(s)))].join(', '))}</p>
     <p class="muted" style="margin-top:10px">Obrigada pela preferência!</p>
     <p><button onclick="print()">Imprimir</button></p>
     <script>setTimeout(()=>print(),300)</script>

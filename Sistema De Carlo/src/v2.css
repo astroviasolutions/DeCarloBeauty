@@ -277,7 +277,8 @@ html.v2[data-bb-theme] {
 }
 /* ===== Agenda do celular: linha do tempo ===== */
 html.v2[data-bb-theme] {
-  .mt { position: relative; padding-bottom: 90px; }
+  /* era ".mt" e batia com a classe utilitária .mt (margin-top) → botões com 90px vazios embaixo */
+  .mt-root { position: relative; padding-bottom: 90px; }
   .mt-days { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 9px 6px 10px; scroll-behavior: smooth; }
   .mt-days::-webkit-scrollbar { display: none; }
   .mt-day { flex: 0 0 52px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 9px 0 8px; border-radius: 18px; border: 1px solid var(--v-line); background: var(--v-surface); color: var(--v-text); position: relative; transition: transform .2s, background .2s; }
@@ -468,3 +469,28 @@ html.v2[data-bb-theme] .stat-accent.v-lit { background-image: radial-gradient(26
 html.v2[data-bb-theme] :is(.card, .stat, .team-card, .info-card, .svc, .sel-card, .plan):hover { transform: none !important; }
 html.v2[data-bb-theme] :is(.svc, .stat-accent).v-lit { background-image: none; }
 html.v2[data-bb-theme] .stat-accent.v-lit { background-image: var(--v-grad); }
+
+/* ===== Menu lateral sempre inteiro (antes o "Modo TV" e o "Sair" sumiam embaixo em notebook) ===== */
+.side-nav { min-height: 0; }
+.side-foot .side-user { padding: 4px 2px 4px 8px; gap: 8px; }
+.side-user-name { flex: 1; min-width: 0; }
+.side-user-name b, .side-user-name small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side-out { flex: none; color: inherit; }
+@media (min-width: 901px) and (max-height: 900px) {
+  html.v2[data-bb-theme] .side-link { height: 36px; }
+  html.v2[data-bb-theme] .side-nav { padding: 16px 0; gap: 1px; }
+  .side-brand { padding-bottom: 12px; margin-bottom: 8px; }
+}
+@media (min-width: 901px) and (max-height: 780px) {
+  html.v2[data-bb-theme] .side-link { height: 31px; font-size: 13.5px; }
+  html.v2[data-bb-theme] .side-nav { padding: 12px 0; gap: 0; }
+  html.v2[data-bb-theme] .side-link.on::before, html.v2[data-bb-theme] .side-link.on::after { width: 18px; height: 18px; }
+  html.v2[data-bb-theme] .side-link.on::before { top: -18px; background: radial-gradient(circle at 0 0, transparent 17.5px, var(--v-bg) 18px); }
+  html.v2[data-bb-theme] .side-link.on::after { bottom: -18px; background: radial-gradient(circle at 0 100%, transparent 17.5px, var(--v-bg) 18px); }
+  .side-brand { padding-top: 0; padding-bottom: 8px; margin-bottom: 4px; }
+  .side-foot { padding-top: 6px; }
+}
+@media (min-width: 901px) and (max-height: 640px) {
+  html.v2[data-bb-theme] .side-link { height: 27px; font-size: 13px; }
+  .side .logo-sub { display: none; }
+}

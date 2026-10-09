@@ -1,3 +1,4 @@
+import { homeOf } from './staff/Layout'
 import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ChevronLeft, Delete } from 'lucide-react'
@@ -14,13 +15,13 @@ export default function Login() {
   const [err, setErr] = useState('')
   const [loading, setLoading] = useState(false)
 
-  if (session) return <Navigate to={session.role === 'admin' ? '/painel/inicio' : '/painel/profissional'} replace />
+  if (session) return <Navigate to={homeOf(session)} replace />
 
   const go = async (cred) => {
     setErr(''); setLoading(true)
     try {
       const s = await actions.login(cred)
-      nav(s.role === 'admin' ? '/painel/inicio' : '/painel/profissional', { replace: true })
+      nav(homeOf(s), { replace: true })
     } catch (e) { setErr(e.message); setPin('') } finally { setLoading(false) }
   }
 

@@ -1,14 +1,16 @@
 import { useMemo, useState } from 'react'
 import { Banknote, Check, CreditCard, QrCode, Repeat, Wallet } from 'lucide-react'
 import ReceiptButtons from './Receipt'
-import ReviewButtons from './Review'
 import { useStore } from '../state/Store'
-import { Avatar, Button, Empty, Modal } from './ui'
-import { applyDiscount, priceItems } from '../lib/commission'
-import { packageFor } from './Packages'
+import ReviewButtons from './Review'
+import { Avatar, Button, Empty, Field, Modal } from './ui'
+import { applyCardFee, applyDiscount, priceItems } from '../lib/commission'
+import { packageChargeItem, packageFor, pendingPackages } from './Packages'
 import { serviceNames } from './Appointments'
-import { saveCredit } from '../lib/credit'
-import { cls, money, nowMin, parseMoney, round2, today, toHHMM } from '../lib/utils'
+import { addDays, cls, money, nowMin, parseMoney, round2, today, toHHMM } from '../lib/utils'
+import SuppliesEditor, { defaultSupplies, supplyItems } from './Supplies'
+import { IncreaseButton, IncreaseEditor } from './ItemIncrease'
+import { feeAmount, feeRate, financeOf, isCard, MAX_PARCELAS, surchargeFor } from '../lib/cardFees'
 
 /**
  * Comanda: tudo que a cliente fez no dia, com uma ou várias profissionais,
@@ -21,6 +23,7 @@ const PAY = [
   { value: 'debito', label: 'Débito', icon: CreditCard },
   { value: 'credito', label: 'Crédito', icon: CreditCard },
   { value: 'saldo', label: 'Saldo da cliente', icon: Wallet },
+  { value: 'fiado', label: 'Pagar depois', icon: Wallet },
   { value: 'permuta', label: 'Permuta', icon: Repeat },
 ]
 const OPEN = ['agendado', 'confirmado']
@@ -33,7 +36,7 @@ export const comandaOf = (appointments, appt) => appointments
 function itemsOf(a, services, packages) {
   const base = a.serviceIds.map((id) => services.find((s) => s.id === id))
   const cat = base.reduce((s, x) => s + Number(x?.price || 0), 0)
-  const k = cat > 0 && Number(a.total) > 0 ? Number(a.total) / cat : 1 // valor combinado no agendamento
+  const k = !/Sessão de pacote/i.test(a.notes || '') && cat > 0 && Number(a.total) > 0 ? Number(a.total) / cat : 1 // valor combinado (agendamento de pacote: total = valor do pacote)
   return a.serviceIds.map((id, i) => {
     const it = { type: 'service', refId: id, name: base[i]?.name || 'Serviço', price: round2(Number(base[i]?.price || 0) * k), qty: 1 }
     const pk = packageFor(packages, a.clientId, id)
@@ -42,13 +45,20 @@ function itemsOf(a, services, packages) {
 }
 
 export function ComandaCheckout({ appts, onDone }) {
-  const { data, actions } = useStore()
-  const [lines, setLines] = useState(() => appts.map((a) => ({ a, on: true, items: itemsOf(a, data.services, data.packages) })))
+  const { data, actions, session } = useStore()
+  const showComm = session?.role !== 'reception' // recepção não vê comissão
+  // pacote reservado e ainda não pago entra na 1ª linha (cobra junto com a comanda)
+  const [lines, setLines] = useState(() => appts.map((a, i) => ({ a, on: true, items: [...itemsOf(a, data.services, data.packages), ...(i === 0 ? pendingPackages(data.packages, a.clientId).map(packageChargeItem) : [])] })))
   const [payment, setPayment] = useState('pix')
+  const [parc, setParc] = useState(1) // crédito: em quantas vezes (taxa da maquininha)
+  const [mach, setMach] = useState(null) // maquininha (null = a primeira de Ajustes)
+  const machines = financeOf(data.settings).machines
+  const machineId = machines.some((m) => m.id === mach) ? mach : machines[0].id
   const [discount, setDiscount] = useState('')
   const [saving, setSaving] = useState(false)
   const [done, setDone] = useState(null)
-  const client = data.clients.find((c) => c.id === appts[0]?.clientId)
+  const [incOpen, setIncOpen] = useState(null) // item com o editor de acréscimo aberto
+  const client =data.clients.find((c) => c.id === appts[0]?.clientId)
   const credit = Number(client?.credit || 0)
   const rules = data.settings.privacy?.commission || {}
   const permuta = payment === 'permuta'
@@ -71,29 +81,42 @@ export function ComandaCheckout({ appts, onDone }) {
     const out = act.map((l, i) => {
       const barber = data.barbers.find((b) => b.id === l.a.barberId)
       const d = round2(subs[i] * f) // desconto dividido proporcionalmente entre as profissionais
-      const priced = applyDiscount(priceItems(l.items, { services: data.services, products: data.products, barber }), rules.discountReduces === false || permuta ? 0 : d)
+      const priced = applyDiscount(priceItems(l.items, { services: data.services, products: data.products, barber, materialReduces: !!rules.materialReduces }), rules.discountReduces === false || permuta ? 0 : d)
       const items = permuta ? priced.map((x) => ({ ...x, commission: 0 })) : priced
       return { ...l, barber, subtotal: subs[i], discount: d, total: round2(subs[i] - d), items, commission: round2(items.reduce((s, x) => s + x.commission, 0)) }
     })
-    return { out, subtotal, disc, total: round2(subtotal - disc) }
-  }, [lines, discount, permuta, data, rules.discountReduces])
+    // juros do parcelado repassado (Ajustes) entra na 1ª profissional, sem comissão
+    const base = round2(subtotal - disc)
+    const sur = payment === 'credito' ? surchargeFor(data.settings, base, parc, machineId) : 0
+    if (sur > 0 && out[0]) out[0] = { ...out[0], items: [...out[0].items, { type: 'surcharge', refId: null, name: `Juros do parcelamento ${parc}x`, price: sur, qty: 1, commissionRate: 0, commission: 0 }], subtotal: round2(out[0].subtotal + sur), total: round2(out[0].total + sur) }
+    // taxa da maquininha por venda (e, se for a regra, reduz a comissão)
+    // só a parte da taxa que a clínica absorve reduz a comissão (o juros repassado já cobre a taxa)
+    const withFee = out.map((l) => { const fee = feeAmount(data.settings, payment, l.total, parc, machineId); const ls = l.items.filter((x) => x.type === 'surcharge').reduce((s, x) => s + x.price, 0); const items = rules.feeReduces && !permuta ? applyCardFee(l.items, l.total - ls, Math.max(0, fee - ls)) : l.items; return { ...l, fee, items, commission: round2(items.reduce((s, x) => s + Number(x.commission || 0), 0)) } })
+    return { out: withFee, subtotal, disc, sur, fee: round2(withFee.reduce((s, l) => s + l.fee, 0)), total: round2(base + sur) }
+  }, [lines, discount, permuta, data, rules.discountReduces, rules.materialReduces, rules.feeReduces, payment, parc, machineId])
 
   const finish = async () => {
     if (!calc.out.length) return
     if (payment === 'saldo' && credit < calc.total) return actions.notify(`Saldo insuficiente: ${money(credit)}`, 'bad')
-    if (payment === 'saldo' && !client) return actions.notify('Cliente sem cadastro: use outra forma de pagamento', 'bad')
+    if ((payment === 'saldo' || payment === 'fiado') && !client) return actions.notify('Cliente sem cadastro: use outra forma de pagamento', 'bad')
     setSaving(true)
     try {
       const made = []
       for (const l of calc.out) {
-        const pay = l.total === 0 && l.items.some((x) => x.packageId) && !permuta ? 'pacote' : payment
+        const pay = payment === 'fiado' ? 'a pagar' : l.total === 0 && l.items.some((x) => x.packageId) && !permuta ? 'pacote' : payment
         made.push(await actions.createSale({
           date: today(), time: toHHMM(nowMin()), barberId: l.a.barberId, clientId: l.a.clientId || null, clientName: l.a.clientName, appointmentId: l.a.id,
-          items: l.items, subtotal: l.subtotal, discount: l.discount, total: l.total, payment: pay, commissionTotal: l.commission,
+          items: [...l.items, ...supplyItems(l.sup ?? defaultSupplies(l.items, data.services), data.products)], subtotal: l.subtotal, discount: l.discount, total: l.total, payment: pay, commissionTotal: l.commission,
+          // taxa do cartão de cada venda da comanda (proporcional ao valor de cada profissional)
+          installments: payment === 'credito' ? parc : null, cardFee: l.fee, cardMachine: isCard(payment) ? machineId : null,
           benefit: permuta ? { kind: 'permuta', label: 'Permuta', amount: l.subtotal } : null, loyaltyRedeemed: false,
         }))
       }
-      if (payment === 'saldo' && calc.total > 0) await saveCredit(actions, client, credit - calc.total, null)
+      if ((payment === 'saldo' || payment === 'fiado') && calc.total > 0) {
+        const { id, name, phone, notes, anamnese, createdAt, birthday, lastCampaignAt } = client
+        await actions.upsert('clients', { id, name, phone, notes, anamnese, createdAt, birthday, lastCampaignAt, credit: round2(credit - calc.total), ...(payment === 'fiado' ? { debtDue: credit < 0 && client.debtDue ? client.debtDue : addDays(today(), financeOf(data.settings).fiado.dias) } : {}) }, payment === 'fiado' ? `Ficou a pagar ${money(calc.total)}` : null)
+      }
+      for (const it of calc.out.flatMap((l) => l.items).filter((x) => x.type === 'package')) await actions.patch('packages', it.refId, { payment: payment === 'fiado' ? 'a pagar' : payment })
       setDone(made.filter(Boolean))
     } finally { setSaving(false) }
   }
@@ -120,16 +143,23 @@ export function ComandaCheckout({ appts, onDone }) {
               <b>{b?.name} · {l.a.time}</b>
               <label className="small"><input type="checkbox" checked={l.on} onChange={(e) => setLines((ls) => ls.map((x, i) => (i === li ? { ...x, on: e.target.checked } : x)))} /> fechar agora</label>
             </div>
-            {l.items.map((it, ii) => (
-              <div key={ii} className="comanda-item">
-                <span>{it.name}</span>
-                <span className="small">
-                  {(it.packageId || packageFor(data.packages, l.a.clientId, it.refId)) && <button className={cls('pill pkg-use', it.packageId && 'on')} onClick={() => togglePkg(li, ii)}>{it.packageId ? '✓ Pacote' : 'Usar pacote'}</button>}
-                  {' '}<b>{money(it.price * it.qty)}</b>
-                </span>
-              </div>
-            ))}
-            {c && <small className="muted">Comissão de {b?.name.split(' ')[0]}: {money(c.commission)}{c.discount > 0 ? ` · desconto ${money(c.discount)}` : ''}</small>}
+            {l.items.map((it, ii) => {
+              const canInc = it.type === 'service' && !it.packageId && l.on
+              const key = `${li}-${ii}`
+              return (
+                <div key={ii} className="comanda-item">
+                  <span>{it.name}{Number(it.increase) > 0 && <small className="inc-note">{money(it.basePrice)} + {money(it.increase)} acréscimo{it.increaseNote ? ` · ${it.increaseNote}` : ''}</small>}</span>
+                  <span className="small">
+                    {(it.packageId || packageFor(data.packages, l.a.clientId, it.refId)) && <button className={cls('pill pkg-use', it.packageId && 'on')} onClick={() => togglePkg(li, ii)}>{it.packageId ? '✓ Pacote' : 'Usar pacote'}</button>}
+                    {canInc && <IncreaseButton item={it} open={incOpen === key} onToggle={() => setIncOpen(incOpen === key ? null : key)} />}
+                    {' '}<b>{money(it.price * it.qty)}</b>
+                  </span>
+                  {canInc && incOpen === key && <IncreaseEditor item={it} onApply={(nx) => setLines((ls) => ls.map((x, i) => (i !== li ? x : { ...x, items: x.items.map((y, j) => (j === ii ? nx : y)) })))} onClose={() => setIncOpen(null)} />}
+                </div>
+              )
+            })}
+            {c && showComm && <small className="muted">Comissão de {b?.name.split(' ')[0]}: {money(c.commission)}{c.discount > 0 ? ` · desconto ${money(c.discount)}` : ''}</small>}
+            {l.on && <SuppliesEditor value={l.sup ?? defaultSupplies(l.items, data.services)} onChange={(v) => setLines((ls) => ls.map((x, i) => (i === li ? { ...x, sup: v } : x)))} products={data.products} />}
           </div>
         )
       })}
@@ -138,6 +168,14 @@ export function ComandaCheckout({ appts, onDone }) {
           <button key={p.value} className={cls('pay-btn', payment === p.value && 'on')} onClick={() => setPayment(p.value)}><p.icon size={18} /> {p.label}{p.value === 'saldo' ? ` (${money(credit)})` : ''}</button>
         ))}
       </div>
+      {isCard(payment) && calc.total > 0 && (
+        <div className="card-fee-box">
+          {machines.length > 1 && <Field label="Maquininha"><select value={machineId} onChange={(e) => setMach(e.target.value)}>{machines.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></Field>}
+          {payment === 'credito' && <Field label="Parcelas no crédito"><select value={parc} onChange={(e) => setParc(Number(e.target.value))}>{Array.from({ length: MAX_PARCELAS }, (_, i) => i + 1).map((n) => { const t = round2(calc.subtotal - calc.disc); const tot = t + surchargeFor(data.settings, t, n, machineId); return <option key={n} value={n}>{n === 1 ? `À vista (1x) ${money(tot)}` : `${n}x de ${money(tot / n)}`} · taxa {String(feeRate(data.settings, 'credito', n, machineId)).replace('.', ',')}%</option> })}</select></Field>}
+          {calc.sur > 0 && <small>Juros repassado para a cliente: <b>+{money(calc.sur)}</b></small>}
+          {(() => { const fee = calc.fee; return <small className="muted">{fee > 0 ? <>Taxa da maquininha: <b>{money(fee)}</b> · entra líquido <b>{money(calc.total - fee)}</b></> : <>Sem taxa cadastrada. Cadastre em <b>Ajustes → Taxas da maquininha</b>.</>}</small> })()}
+        </div>
+      )}
       <div className="totals">
         <div><span>Subtotal</span><span>{money(calc.subtotal)}</span></div>
         {!permuta && <div className="disc"><span>Desconto (R$ ou %)</span><input value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0,00 ou 10%" /></div>}

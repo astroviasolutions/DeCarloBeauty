@@ -9,7 +9,8 @@ import Importer from '../../components/Importer'
 import Backup from '../../components/Backup'
 import { useStore } from '../../state/Store'
 import { Button, Card, Field } from '../../components/ui'
-import { maskPhone, onlyDigits, WEEKDAYS } from '../../lib/utils'
+import { maskPhone, onlyDigits, RECEPTION_PERMS, WEEKDAYS } from '../../lib/utils'
+import FinanceSettings from '../../components/FinanceSettings'
 
 export default function Config() {
   const { data, actions, isDemo } = useStore()
@@ -88,6 +89,7 @@ export default function Config() {
           </div>
         </Card>
         <Card title="Importar planilha"><Importer /></Card>
+        
         <Card title="Backup dos dados"><Backup /></Card>
       </div>
       <div className="grid-2 mt">
@@ -127,6 +129,15 @@ export default function Config() {
             </div>
             <p className="muted small mt-sm">Cada profissional vê só a própria agenda, o próprio extrato e os avisos dela.</p>
           </Card>
+          <Card title="Recepção · o que ela pode fazer">
+            <p className="muted small mb-sm">Sempre pode: agenda de todas as profissionais, agendar e remarcar, lista de espera, cadastrar e editar clientes (com o WhatsApp completo) e cobrar. Nunca vê: Lucro real, despesas, comissões, relatórios, ajustes e equipe. Marque o que mais ela pode fazer. O acesso dela é criado em <b>Equipe → Recepção</b>.</p>
+            {RECEPTION_PERMS.map((p) => {
+              const cur = privacy.reception?.[p.key]
+              const on = typeof cur === 'boolean' ? cur : p.def
+              return <label key={p.key} className="toggle-row"><span><b>{p.label}</b><small>{p.hint}</small></span><span className="switch"><input type="checkbox" checked={on} onChange={(e) => setS({ ...s, privacy: { ...privacy, reception: { ...(privacy.reception || {}), [p.key]: e.target.checked } } })} /><span /></span></label>
+            })}
+            <p className="muted small mt-sm">Lembre de tocar em <b>Salvar</b> no topo. Vale no próximo carregamento do painel dela.</p>
+          </Card>
           <Card title="Agenda sobreposta (tempo de pausa)">
             <p className="muted small mb-sm">Para quem precisa marcar outra cliente enquanto um procedimento está em pausa (ex.: coloração agindo). Só vale para agendamentos feitos pelo painel; o site das clientes continua sem sobreposição.</p>
             <div className="toggle-row"><span><b>Quem pode sobrepor</b><small>Toque para liberar (ex.: as profissionais do cabelo).</small></span></div>
@@ -154,6 +165,8 @@ export default function Config() {
           </Card>
         </div>
       </div>
+      <h2 className="section-title mt">Financeiro</h2>
+      <div className="grid-2 fin-settings"><FinanceSettings s={s} setS={setS} /></div>
       <div className="grid-2 mt">
         <Card title="Notificações da equipe">
           <div className="toggles">

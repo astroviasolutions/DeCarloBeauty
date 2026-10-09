@@ -67,8 +67,10 @@ export function createDemoDB() {
         out.expenses = []
         out.waitlist = hide ? [] : out.waitlist.filter((w) => !w.barberId || w.barberId === me)
         if (hide) {
-          out.appointments.forEach((a) => { a.clientPhone = '' })
-          out.clients.forEach((c) => { c.phone = '' })
+          // só os 4 últimos números (a profissional identifica a cliente sem ver o contato)
+          const l4 = (p) => { const d = onlyDigits(p); return d.length >= 10 ? d.slice(-4) : '' }
+          out.appointments.forEach((a) => { a.clientPhoneLast4 = l4(a.clientPhone); a.clientPhone = '' })
+          out.clients.forEach((c) => { c.phoneLast4 = l4(c.phone); c.phone = '' })
           out.barbers.forEach((b) => { if (b.id !== me) b.phone = '' })
         }
         out.barbers.forEach((b) => { delete b.pin })
@@ -76,6 +78,19 @@ export function createDemoDB() {
       return out
     },
     async linkStaff() {},
+    async linkReception() {},
+    async unlinkReception() {},
+    async setProductUnit(id, unit) { const p = data.products.find((x) => x.id === id); if (p) { p.unit = unit; save() } },
+    /** WhatsApp da cliente pela equipe (gestão, recepção ou profissional) */
+    async setClientPhone(id, phone) {
+      const ph = onlyDigits(phone)
+      if (ph.length < 10 || ph.length > 13) throw new Error('WhatsApp inválido: use DDD + número')
+      if (data.clients.some((x) => x.id !== id && onlyDigits(x.phone) === ph)) throw new Error('Esse WhatsApp já é de outra cliente')
+      const c = data.clients.find((x) => x.id === id); if (!c) throw new Error('Cliente não encontrada')
+      c.phone = ph
+      data.appointments.filter((a) => a.clientId === id && a.date >= today() && ['agendado', 'confirmado'].includes(a.status)).forEach((a) => { a.clientPhone = ph })
+      save(); return ph.slice(-4)
+    },
     async savePush() {},
     async createStaffLogin() { throw new Error('No modo demonstração o acesso é pelo PIN') },
     async confirmInfo(id) { const a = data.appointments.find((x) => x.id === id); return a ? { client: a.clientName, date: a.date, items: [{ time: a.time, services: 'Atendimento', barber: '', status: a.status }] } : null },
@@ -103,8 +118,8 @@ export function createDemoDB() {
       if (p.clientId && onlyDigits(p.clientPhone).length < 10) { const c = data.clients.find((x) => x.id === p.clientId); if (c) p = { ...p, clientName: c.name, clientPhone: c.phone } }
       const ov = data.settings.privacy?.overlap || {}
       const capN = p.source === 'balcao' && (ov.barbers || []).includes(p.barberId) ? Math.max(2, Number(ov.max || 2)) : 1
-      if (data.appointments.filter((a) => a.barberId === p.barberId && a.date === p.date && !['cancelado', 'faltou'].includes(a.status) && toMin(p.time) < toMin(a.time) + Number(a.duration) && toMin(p.time) + Number(p.duration) > toMin(a.time)).length >= capN) throw new Error('Esse horário acabou de ser reservado. Escolha outro, por favor.')
-      const blocked = data.blocks.some((b) => b.barberId === p.barberId && b.date === p.date && (!b.start || (toMin(p.time) < toMin(b.end) && toMin(p.time) + Number(p.duration) > toMin(b.start))))
+      if (!p.force && data.appointments.filter((a) => a.barberId === p.barberId && a.date === p.date && !['cancelado', 'faltou'].includes(a.status) && toMin(p.time) < toMin(a.time) + Number(a.duration) && toMin(p.time) + Number(p.duration) > toMin(a.time)).length >= capN) throw new Error('Esse horário acabou de ser reservado. Escolha outro, por favor.')
+      const blocked = !p.force && data.blocks.some((b) => b.barberId === p.barberId && b.date === p.date && (!b.start || (toMin(p.time) < toMin(b.end) && toMin(p.time) + Number(p.duration) > toMin(b.start))))
       if (blocked) throw new Error('A profissional não atende nesse horário. Escolha outro, por favor.')
       const c = upsertClient({ name: p.clientName, phone: p.clientPhone, birthday: p.birthday })
       const appt = {
@@ -119,7 +134,8 @@ export function createDemoDB() {
     async updateAppointment(id, patch) {
       const a = data.appointments.find((x) => x.id === id)
       if (!a) throw new Error('Agendamento não encontrado')
-      if ((patch.time || patch.date || patch.barberId) && overlaps(patch.barberId ?? a.barberId, patch.date ?? a.date, patch.time ?? a.time, patch.duration ?? a.duration, id))
+      const force = patch.force; delete patch.force
+      if (!force && (patch.time || patch.date || patch.barberId) && overlaps(patch.barberId ?? a.barberId, patch.date ?? a.date, patch.time ?? a.time, patch.duration ?? a.duration, id))
         throw new Error('Conflito de horário com outro agendamento.')
       Object.assign(a, patch); save()
       return clone(a)
@@ -133,7 +149,10 @@ export function createDemoDB() {
       save(); return clone(row)
     },
 
+    async patch(table, id, fields) { const r = (data[table] || []).find((x) => x.id === id); if (r) Object.assign(r, fields); save(); return clone(r) },
     async remove(table, id) { data[table] = data[table].filter((x) => x.id !== id); save() },
+    /** vendas de qualquer período (o app só carrega ~120 dias) */
+    async salesRange(from, to) { return clone(data.sales.filter((s) => s.date >= from && s.date <= to)) },
 
     async saveSettings(s) { data.settings = { ...data.settings, ...s }; save(); return clone(data.settings) },
 
@@ -146,7 +165,7 @@ export function createDemoDB() {
         const a = data.appointments.find((x) => x.id === s.appointmentId)
         if (a) { a.status = 'concluido'; a.saleId = s.id; a.total = s.total }
       }
-      for (const it of s.items) if (it.type === 'product') {
+      for (const it of s.items) if (it.type === 'product' || it.type === 'supply') { // insumo também baixa/volta do estoque
         const p = data.products.find((x) => x.id === it.refId)
         if (p) p.stock = Math.max(0, Number(p.stock) - it.qty)
       }
@@ -164,6 +183,9 @@ export function createDemoDB() {
     async editSale(id, sale) {
       const s = data.sales.find((x) => x.id === id); if (!s) return
       pkgApply(s.items, -1); pkgApply(sale.items, 1)
+      // estoque: devolve o da versão antiga (produtos e insumos) e baixa o da nova
+      const stock = (items, sign) => items.filter((it) => it.type === 'product' || it.type === 'supply').forEach((it) => { const p = data.products.find((x) => x.id === it.refId); if (p) p.stock = Math.max(0, Number(p.stock) + sign * Number(it.qty)) })
+      stock(s.items, 1); stock(sale.items, -1)
       Object.assign(s, sale)
       const ap = s.appointmentId && data.appointments.find((x) => x.id === s.appointmentId)
       if (ap) { const ids = sale.items.filter((i) => i.type === 'service').map((i) => i.refId); Object.assign(ap, { barberId: sale.barberId, total: sale.total, ...(ids.length ? { serviceIds: ids } : {}) }) }
@@ -179,19 +201,38 @@ export function createDemoDB() {
     async deleteSale(id) {
       const s = data.sales.find((x) => x.id === id)
       if (!s) return
-      for (const it of s.items) if (it.type === 'product') {
+      for (const it of s.items) if (it.type === 'product' || it.type === 'supply') { // insumo também baixa/volta do estoque
         const p = data.products.find((x) => x.id === it.refId); if (p) p.stock = Number(p.stock) + it.qty
       }
       pkgApply(s.items, -1)
-      for (const it of s.items) if (it.type === 'package') { const p = (data.packages || []).find((x) => x.id === it.refId); if (p) p.active = false }
+      // pacote estornado: volta a pendente; sem sessão usada, é excluído
+      for (const it of s.items) if (it.type === 'package') { const p = (data.packages || []).find((x) => x.id === it.refId); if (p) { p.payment = 'pendente'; if ((p.items || []).every((i) => !Number(i.used || 0))) data.packages = data.packages.filter((x) => x.id !== p.id) } }
       if (s.appointmentId) { const a = data.appointments.find((x) => x.id === s.appointmentId); if (a) { a.status = 'confirmado'; a.saleId = null } }
       data.sales = data.sales.filter((x) => x.id !== id); save()
     },
 
-    // ---- Portal do cliente (Meus horários) ----
-    async portal(phone) {
+    // ---- Portal do cliente (Meus horários): entra pelo link pessoal OU celular + aniversário ----
+    async clientAccess({ token, phone, birthday }) {
+      const tok = (c) => c.portalToken || `demo-${c.id}`
+      let c
+      if (token) { c = data.clients.find((x) => tok(x) === token); if (!c) return { error: 'link' } }
+      else {
+        const p = onlyDigits(phone); const d = onlyDigits(birthday)
+        const fails = (data._portalFails ||= {})
+        if ((fails[p] || []).filter((t) => t > Date.now() - 3600e3).length >= 5) return { error: 'bloqueado' }
+        c = data.clients.find((x) => onlyDigits(x.phone) === p)
+        if (!c || d.length !== 4 || c.birthday !== `${d.slice(2)}-${d.slice(0, 2)}`) { (fails[p] ||= []).push(Date.now()); save(); return { error: c && !c.birthday ? 'semaniversario' : 'dados' } }
+      }
+      return { ...(await this._portal(c)), token: tok(c) }
+    },
+    /** agendar: só saudação e benefícios (sem histórico, sem horários, sem cancelar) */
+    async bookingProfile(phone) {
       const c = data.clients.find((x) => onlyDigits(x.phone) === onlyDigits(phone))
       if (!c) return null
+      const p = await this._portal(c)
+      return clone({ client: { name: c.name.split(' ')[0], hasBirthday: !!c.birthday }, last: p.last, loyalty: p.loyalty, club: p.club, birthdayMonth: p.birthdayMonth })
+    },
+    async _portal(c) {
       const mine = data.appointments.filter((a) => a.clientId === c.id)
       const upcoming = mine.filter((a) => a.date >= today() && ['agendado', 'confirmado'].includes(a.status)).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
       const last = mine.filter((a) => a.status === 'concluido').sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time))[0] || null
@@ -206,9 +247,10 @@ export function createDemoDB() {
         toReview: toReview && { id: toReview.id, date: toReview.date },
       })
     },
-    async clientCancel(id, phone) {
+    async clientCancel(id, token) {
+      const c = data.clients.find((x) => (x.portalToken || `demo-${x.id}`) === token)
       const a = data.appointments.find((x) => x.id === id)
-      if (!a || onlyDigits(a.clientPhone) !== onlyDigits(phone)) throw new Error('Agendamento não encontrado')
+      if (!c || !a || a.clientId !== c.id || a.date < today() || !['agendado', 'confirmado'].includes(a.status)) throw new Error('Agendamento não encontrado')
       a.status = 'cancelado'; save()
     },
     async joinWaitlist(w) {
@@ -247,6 +289,7 @@ export function createDemoDB() {
     // ---- autenticação demo por PIN ----
     async login({ pin }) {
       if (pin === BRAND.demoAdminPin) return { role: 'admin', name: 'Gestão De Carlo', barberId: null }
+      if (pin === '0000') return { role: 'reception', name: 'Recepção', barberId: null } // demonstração do perfil recepção
       const b = data.barbers.find((x) => x.active && x.pin === pin)
       if (b) return { role: 'barber', name: b.name, barberId: b.id }
       throw new Error('PIN inválido')

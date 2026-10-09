@@ -39,7 +39,7 @@ export default function ClientFiles({ client, canDelete }) {
       <label className="btn btn-ghost btn-sm" style={{ justifySelf: 'start' }}><Paperclip size={15} /> {busy ? 'Enviando…' : 'Adicionar arquivo'}<input type="file" multiple hidden disabled={busy} accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" onChange={add} /></label>
       <p className="muted small">Termos assinados, exames, fotos, receitas. Até 10 MB por arquivo. Só a equipe logada consegue abrir.</p>
       {list === null && <p className="muted small">Carregando…</p>}
-      {list?.length === 0 && <Empty title="Nenhum anexo" text="Os arquivos desta cliente aparecem aqui." />}
+      {list?.length === 0 && <Empty title="Nenhum anexo" text="Guarde aqui termos assinados, exames e fotos em PDF ou imagem: use o botão Adicionar arquivo acima." />}
       {list?.map((f) => (
         <div key={f.id} className="pkg-row">
           <div className="pkg-head">

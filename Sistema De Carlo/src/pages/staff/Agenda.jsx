@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarOff, ChevronLeft, ChevronRight, Plus, Receipt, Search } from 'lucide-react'
 import { OpenComandas } from '../../components/Comanda'
+import { norm } from '../../components/CatalogFilter'
 import { useStore } from '../../state/Store'
 import { Avatar, Badge, Button, Card, Empty, Segmented, Stat, StatusBadge } from '../../components/ui'
 import { BlockModal, BlocksList, WaitlistPanel } from '../../components/Team'
 import { WaitlistModal } from '../../components/Loyalty'
 import { AppointmentModal, ApptRow, NewAppointmentModal, ObsTag, serviceNames } from '../../components/Appointments'
 import {
-  addDays, canBook, cls, endOfMonth, fmtDate, fmtDateLong, money, MONTHS, nowMin, parseDate, relDay, startOfMonth, startOfWeek, STATUS, sum, today, toHHMM, toMin, WD_SHORT, weekday,
+  addDays, canBook, cls, deskCan, endOfMonth, fmtDate, fmtDateLong, money, MONTHS, nowMin, parseDate, relDay, startOfMonth, startOfWeek, STATUS, sum, today, toHHMM, toMin, WD_SHORT, weekday,
 } from '../../lib/utils'
 
 const PX_PER_MIN = 1.6
@@ -19,8 +20,10 @@ const VIEWS = [{ value: 'dia', label: 'Dia' }, { value: 'semana', label: 'Semana
  * - `onlyBarberId`: visão da profissional (só a agenda dela).
  */
 export default function Agenda({ onlyBarberId }) {
-  const { data, session } = useStore()
+  const { data, session, actions } = useStore()
   const allowBook = canBook(data.settings, session)
+  const canBlock = session?.role !== 'reception' || deskCan(data.settings, session, 'blocks')
+  const showMoney = session?.role !== 'reception' || deskCan(data.settings, session, 'agendaTotals') // recepção: só se a gestão liberar
   const [view, setView] = useState('dia')
   const [date, setDate] = useState(today())
   const [range, setRange] = useState({ from: today(), to: addDays(today(), 6) })
@@ -56,18 +59,19 @@ export default function Agenda({ onlyBarberId }) {
       : view === 'mes' ? `${MONTHS[parseDate(date).getMonth()].replace(/^./, (c) => c.toUpperCase())} de ${parseDate(date).getFullYear()}`
         : `${fmtDate(range.from)} a ${fmtDate(range.to)}`
   const openDay = (d) => { setDate(d); setView('dia') }
-  const book = (p) => allowBook && setNewFor({ barberId: onlyBarberId || p.barberId || barbers[0]?.id, date: p.date || date, time: p.time || '' })
+  // antes o clique não fazia nada quando o agendamento estava bloqueado para o login: agora explica
+  const book = (p) => (!allowBook ? actions.notify('Agendamento pelo painel está bloqueado para o seu login. A gestão libera em Ajustes → Privacidade.', 'bad') : setNewFor({ barberId: onlyBarberId || p.barberId || barbers[0]?.id, date: p.date || date, time: p.time || '' }))
 
   return (
     <div>
       <div className="page-head">
         <div>
-          <p className="eyebrow">{inSpan.length} atendimentos · {money(sum(inSpan.filter((a) => a.status !== 'cancelado'), (a) => a.total))}</p>
+          <p className="eyebrow">{inSpan.length} atendimentos{showMoney && ` · ${money(sum(inSpan.filter((a) => a.status !== 'cancelado'), (a) => a.total))}`}</p>
           <h1 className="page-title">{title}</h1>
         </div>
         <div className="head-actions">
           {!onlyBarberId && <Button variant="ghost" icon={Receipt} onClick={() => setComandas(true)}>Comandas abertas ({new Set(data.appointments.filter((a) => a.date === (view === 'dia' ? date : today()) && ['agendado', 'confirmado'].includes(a.status)).map((a) => a.clientId || a.clientName)).size})</Button>}
-          <Button variant="ghost" icon={CalendarOff} onClick={() => setBlockOpen(true)}>Bloquear</Button>
+          {canBlock && <Button variant="ghost" icon={CalendarOff} onClick={() => setBlockOpen(true)}>Bloquear</Button>}
           {allowBook && <Button icon={Plus} onClick={() => book({ date: view === 'dia' ? date : today() })}>Agendar</Button>}
         </div>
       </div>
@@ -100,11 +104,17 @@ export default function Agenda({ onlyBarberId }) {
           {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
       </div>
-      <div className="st-legend">{Object.entries(STATUS).map(([k, v]) => <span key={k}><i style={{ background: `rgb(var(--st-${k}))` }} />{v.label}</span>)}</div>
+      {/* legenda clicável: toque numa cor para ver só aquele status (toque de novo para voltar) */}
+      <div className="st-legend st-legend-btns">
+        {Object.entries(STATUS).map(([k, v]) => { const n = data.appointments.filter((a) => ids.has(a.barberId) && a.date >= span.from && a.date <= span.to && a.status === k).length; return (
+          <button key={k} type="button" className={cls(status === k && 'on')} aria-pressed={status === k} title={status === k ? 'Mostrar todos' : `Mostrar só ${v.label.toLowerCase()}`} onClick={() => setStatus(status === k ? 'ativos' : k)}><i style={{ background: `rgb(var(--st-${k}))` }} />{v.label} · {n}</button>
+        ) })}
+        {status !== 'ativos' && <button type="button" className="st-clear" onClick={() => setStatus('ativos')}>Limpar filtro</button>}
+      </div>
 
       {q.trim().length >= 2 && (() => {
-        const t = q.trim().toLowerCase(); const d = t.replace(/\D/g, '')
-        const found = appts.filter((a) => a.clientName.toLowerCase().includes(t) || (d.length >= 3 && String(a.clientPhone || '').includes(d)) || serviceNames(a, data.services).toLowerCase().includes(t))
+        const t = norm(q); const d = q.replace(/\D/g, '')
+        const found = appts.filter((a) => norm(a.clientName).includes(t) || (d.length >= 3 && String(a.clientPhone || '').includes(d)) || norm(serviceNames(a, data.services)).includes(t))
           .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)).slice(0, 40)
         return (
           <Card title={`Busca: ${found.length}${found.length === 40 ? '+' : ''} agendamentos`} className="mb">
@@ -113,14 +123,14 @@ export default function Agenda({ onlyBarberId }) {
           </Card>
         )
       })()}
-      {view === 'dia' && (mobile ? <MobileDay date={date} setDate={setDate} barbers={barbers} appts={inSpan} onPick={setSel} onBook={allowBook ? book : null} onBlock={setEditBlock} who={onlyBarberId || who} setWho={onlyBarberId ? null : setWho} />
-        : <DayGrid date={date} barbers={barbers} appts={inSpan} onPick={setSel} onBook={book} onBlock={setEditBlock} />)}
+      {view === 'dia' && (mobile ? <MobileDay date={date} setDate={setDate} barbers={barbers} appts={inSpan} onPick={setSel} onBook={allowBook ? book : null} onBlock={canBlock ? setEditBlock : null} who={onlyBarberId || who} setWho={onlyBarberId ? null : setWho} />
+        : <DayGrid date={date} barbers={barbers} appts={inSpan} onPick={setSel} onBook={book} onBlock={canBlock ? setEditBlock : null} />)}
       {view === 'semana' && <WeekView from={span.from} appts={inSpan} onPick={setSel} onBook={book} onOpenDay={openDay} />}
       {view === 'mes' && <MonthView date={date} appts={inSpan} onOpenDay={openDay} onBook={book} />}
       {view === 'periodo' && <PeriodList appts={inSpan} onPick={setSel} />}
 
-      {view === 'dia' && !onlyBarberId && <Card title={`Lista de espera · ${relDay(date)}`} action={<button className="link" onClick={() => setWaitOpen(true)}>+ Colocar cliente</button>} className="mt"><WaitlistPanel date={date} /></Card>}
-      {!onlyBarberId && <Card title="Bloqueios (toque para editar ou excluir)" className="mt"><BlocksList /></Card>}
+      {view === 'dia' && !onlyBarberId && <Card title={`Lista de espera · ${relDay(date)}`} action={<button className="link" onClick={() => setWaitOpen(true)}>+ Colocar cliente</button>} className="mt" collapsible storageKey="agenda-espera"><WaitlistPanel date={date} /></Card>}
+      {!onlyBarberId && canBlock && <Card title="Bloqueios (toque para editar ou excluir)" className="mt" collapsible storageKey="agenda-bloqueios"><BlocksList /></Card>}
       {waitOpen && <WaitlistModal open date={date} barberId={who === 'all' ? 'any' : who} serviceIds={[]} me={{ name: '', phone: '' }} barbers={data.barbers} onClose={() => setWaitOpen(false)} />}
       {sel && <AppointmentModal appt={sel} onClose={() => setSel(null)} />}
       {comandas && <OpenComandas date={view === 'dia' ? date : today()} onClose={() => setComandas(false)} />}
@@ -156,7 +166,7 @@ function DayGrid({ date, barbers, appts, onPick, onBook, onBlock }) {
   useEffect(() => { if (shared) actions.busy(date).then(setBusy).catch(() => setBusy([])) }, [date, shared, data.appointments, actions])
   const roomMarks = (b) => {
     if (!b.room) return []
-    if (session?.role === 'admin') {
+    if (session?.role === 'admin' || session?.role === 'reception') {
       return data.appointments.filter((a) => a.date === date && a.barberId !== b.id && !['cancelado', 'faltou'].includes(a.status) && normRoom(data.barbers.find((x) => x.id === a.barberId)?.room) === normRoom(b.room) && a.serviceIds.some((id) => !data.services.find((s) => s.id === id)?.noRoom))
         .map((a) => ({ key: a.id, time: a.time, duration: a.duration, who: data.barbers.find((x) => x.id === a.barberId)?.name.split(' ')[0] }))
     }
@@ -231,7 +241,8 @@ function DayGrid({ date, barbers, appts, onPick, onBook, onBlock }) {
 
 /* ---------- Semana: 7 colunas com os horários do dia ---------- */
 function WeekView({ from, appts, onPick, onBook, onOpenDay }) {
-  const { data } = useStore()
+  const { data, session } = useStore()
+  const showMoney = session?.role !== 'reception' || deskCan(data.settings, session, 'agendaTotals') // recepção: só se a gestão liberar
   const days = Array.from({ length: 7 }, (_, i) => addDays(from, i))
   return (
     <div className="week">
@@ -242,7 +253,7 @@ function WeekView({ from, appts, onPick, onBook, onOpenDay }) {
           <section key={d} className={cls('week-day', d === today() && 'today', closed && 'closed')}>
             <header>
               <button className="week-date" onClick={() => onOpenDay(d)}><small>{WD_SHORT[weekday(d)]}</small><b>{parseDate(d).getDate()}</b></button>
-              <span className="muted small">{list.length ? `${list.length} · ${money(sum(list, (a) => a.total))}` : closed ? 'Fechado' : 'Livre'}</span>
+              <span className="muted small">{list.length ? (showMoney ? `${list.length} · ${money(sum(list, (a) => a.total))}` : String(list.length)) : closed ? 'Fechado' : 'Livre'}</span>
             </header>
             <div className="week-list">
               {list.map((a) => {
@@ -296,7 +307,7 @@ function MonthView({ date, appts, onOpenDay, onBook }) {
 
 /* ---------- Período: lista agrupada por dia ---------- */
 function PeriodList({ appts, onPick }) {
-  const { data } = useStore()
+  const { data, session } = useStore()
   const byDay = {}
   for (const a of appts.slice().sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time))) (byDay[a.date] ??= []).push(a)
   const days = Object.keys(byDay)
@@ -308,7 +319,7 @@ function PeriodList({ appts, onPick }) {
         <Stat label="Atendimentos" value={appts.length} sub={`${appts.filter((a) => a.source === 'online').length} pelo site`} />
         <Stat label="Concluídos" value={done.length} />
         <Stat label="Faltas" value={appts.filter((a) => a.status === 'faltou').length} />
-        <Stat accent label="Valor agendado" value={money(sum(appts.filter((a) => a.status !== 'cancelado'), (a) => a.total))} />
+        {(session?.role !== 'reception' || deskCan(data.settings, session, 'agendaTotals')) && <Stat accent label="Valor agendado" value={money(sum(appts.filter((a) => a.status !== 'cancelado'), (a) => a.total))} />}
       </div>
       {days.map((d) => (
         <Card key={d} title={`${fmtDateLong(d)} · ${byDay[d].length}`} pad={false} className="mb">
@@ -388,7 +399,7 @@ function MobileDay({ date, setDate, barbers, appts, onPick, onBook, onBlock, who
   const dur = (m) => (m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}` : `${m} min`)
   const nowRow = <div key="now" className="mt-now"><span>{toHHMM(nowMin())}</span><i /></div>
   return (
-    <div className="mt">
+    <div className="mt-root">
       <div className="mt-days" ref={(el) => { const on = el?.querySelector('.on'); if (on && el.dataset.d !== date) { el.dataset.d = date; el.scrollLeft = on.offsetLeft - el.clientWidth / 2 + on.clientWidth / 2 } }}>
         {days.map((d) => {
           const n = data.appointments.filter((a) => a.date === d && ids.has(a.barberId) && a.status !== 'cancelado').length

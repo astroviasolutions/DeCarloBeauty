@@ -58,7 +58,7 @@ export async function syncPush() {
 }
 
 /** Cliente: ativa os lembretes deste celular para o número dela */
-export async function enableClientPush(phone) {
+export async function enableClientPush(phone, token) {
   if (!pushSupported()) return isIOS() && !isStandalone() ? 'ios-install' : 'unsupported'
   const perm = await Notification.requestPermission()
   if (perm !== 'granted') return perm === 'denied' ? 'denied' : 'off'
@@ -67,7 +67,7 @@ export async function enableClientPush(phone) {
   if (!reg) return 'unsupported'
   let sub = await reg.pushManager.getSubscription()
   if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID) })
-  await db.saveClientPush(sub.toJSON(), phone, navigator.userAgent)
+  await db.saveClientPush(sub.toJSON(), phone, navigator.userAgent, token) // chave pessoal (Meus horários) ou agendamento recém-feito
   return 'on'
 }
 

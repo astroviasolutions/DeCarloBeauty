@@ -3,7 +3,7 @@ import { Check, Crown, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useStore } from '../../state/Store'
 import { Badge, Button, Card, Field, Modal, Price, Stat } from '../../components/ui'
 import { clubOf } from '../../lib/loyalty'
-import { cls, fmtDate, fmtPhone, money, onlyDigits, sum, today, waLink } from '../../lib/utils'
+import { cls, fmtDate, fmtPhone, money, onlyDigits, sum, today, waLink, parseMoney } from '../../lib/utils'
 import { msg as fillMsg } from '../../lib/messages'
 
 export default function Clube() {
@@ -23,7 +23,7 @@ export default function Clube() {
     actions.upsert('subscriptions', { ...s, paidMonths: has ? s.paidMonths.filter((m) => m !== month) : [...(s.paidMonths || []), month] }, has ? 'Pagamento desmarcado' : 'Mensalidade recebida')
   }
   const savePlan = async () => {
-    await actions.upsert('plans', { ...editPlan, price: Number(String(editPlan.price).replace(',', '.')), limit: editPlan.limit === '' || editPlan.limit == null ? null : Number(editPlan.limit), productDiscount: Number(editPlan.productDiscount || 0) })
+    await actions.upsert('plans', { ...editPlan, price: parseMoney(editPlan.price), limit: editPlan.limit === '' || editPlan.limit == null ? null : Number(editPlan.limit), productDiscount: Number(editPlan.productDiscount || 0) })
     setEditPlan(null)
   }
   const addSub = async () => {

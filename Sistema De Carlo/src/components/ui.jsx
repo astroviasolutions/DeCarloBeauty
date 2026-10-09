@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CountUp, lastTap } from './fx'
-import { Moon, Sparkles, Sun, X } from 'lucide-react'
+import { ChevronDown, Moon, Sparkles, Sun, X } from 'lucide-react'
 import { useTheme } from '../lib/theme'
 import { BRAND } from '../config/brand'
 import { cls, initials, money, STATUS } from '../lib/utils'
@@ -83,11 +83,23 @@ export function Avatar({ name, color = '#1F3E66', size = 40, photo }) {
   )
 }
 
-export function Stat({ label, value, sub, icon: Icon, accent }) {
+/** Explicação curta: "?" que abre/fecha um balão com o texto */
+export function Help({ text }) {
+  const [open, setOpen] = useState(false) // false | 'l' | 'r' (lado para onde o balão abre, para não sair da tela)
+  if (!text) return null
+  return (
+    <span className="help">
+      <button type="button" className="help-btn" aria-label="O que é isso?" aria-expanded={!!open} title={text} onClick={(e) => { e.stopPropagation(); setOpen(open ? false : e.currentTarget.getBoundingClientRect().left + 280 > window.innerWidth ? 'r' : 'l') }}>?</button>
+      {open && <span className={cls('help-pop', open === 'r' && 'right')} role="note" onClick={() => setOpen(false)}>{text}</span>}
+    </span>
+  )
+}
+
+export function Stat({ label, value, sub, icon: Icon, accent, help }) {
   return (
     <div className={cls('stat', accent && 'stat-accent')}>
       <div className="stat-top">
-        <span className="stat-label">{label}</span>
+        <span className="stat-label">{label}<Help text={help} /></span>
         {Icon && <Icon size={18} />}
       </div>
       <div className="stat-value"><CountUp text={value} /></div>
@@ -125,18 +137,39 @@ export function Toast() {
   return <div key={toast.k} className={cls('toast', `toast-${toast.tone}`)}>{toast.msg}</div>
 }
 
-export function Card({ title, action, children, className, pad = true }) {
+/**
+ * Quadro. `collapsible` + `storageKey`: o título vira botão para recolher/abrir (lembra neste aparelho).
+ */
+export function Card({ title, action, children, className, pad = true, collapsible = false, storageKey, defaultCollapsed = false }) {
+  const key = storageKey && `dcb:card:${storageKey}`
+  const [shut, setShut] = useState(() => { if (!collapsible) return false; try { const v = key && localStorage.getItem(key); return v === null || v === undefined ? defaultCollapsed : v === '1' } catch { return defaultCollapsed } })
+  const toggle = () => { const n = !shut; setShut(n); try { if (key) localStorage.setItem(key, n ? '1' : '0') } catch { /* sem armazenamento */ } }
   return (
-    <section className={cls('card', className)}>
+    <section className={cls('card', className, collapsible && shut && 'card-shut')}>
       {(title || action) && (
         <header className="card-head">
-          {title && <h3>{title}</h3>}
-          {action}
+          {title && (collapsible
+            ? <button type="button" className="card-toggle" aria-expanded={!shut} onClick={toggle}><ChevronDown size={16} className="card-chev" /><h3>{title}</h3><small>{shut ? 'mostrar' : 'recolher'}</small></button>
+            : <h3>{title}</h3>)}
+          {!shut && action}
         </header>
       )}
-      <div className={cls(pad && 'card-body')}>{children}</div>
+      {!shut && <div className={cls(pad && 'card-body')}>{children}</div>}
     </section>
   )
+}
+
+/**
+ * Lista longa: mostra as primeiras `limit` e o botão "Mostrar todas (N)" / "Mostrar menos".
+ * Uso: const { visible, more } = useLimit(lista, 20) → {visible.map(...)}{more}
+ */
+export function useLimit(items = [], limit = 20, noun = 'itens') {
+  const [all, setAll] = useState(false)
+  const visible = all || items.length <= limit ? items : items.slice(0, limit)
+  const more = items.length > limit
+    ? <button type="button" className="link show-more" onClick={() => setAll(!all)}>{all ? 'Mostrar menos' : `Mostrar todos (${items.length} ${noun})`}</button>
+    : null
+  return { visible, more }
 }
 
 /**

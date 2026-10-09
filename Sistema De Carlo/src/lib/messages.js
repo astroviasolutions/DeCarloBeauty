@@ -60,6 +60,16 @@ export const MESSAGES = [
     text: 'Olá, {nome}! Fechamento {periodo}:\n{detalhes}\n💰 Total: {valor}\nObrigada pelo trabalho! 🦋',
   },
   {
+    key: 'debt', label: 'Cobrança de fiado', who: 'Relatórios → Clientes devendo',
+    vars: ['nome', 'valor', 'vencimento', 'pix', 'clinica'],
+    text: 'Olá, {nome}! Tudo bem? Passando para lembrar do valor de {valor} em aberto aqui na {clinica}, com vencimento em {vencimento}. Pode ser no Pix: {pix}. Qualquer dúvida, me chama. Obrigada! 🦋',
+  },
+  {
+    key: 'giftCard', label: 'Vale-presente', who: 'Caixa → Vender vale-presente',
+    vars: ['nome', 'valor', 'de', 'clinica', 'link'],
+    text: 'Olá, {nome}! 🎁 Você ganhou um vale-presente de {valor} na {clinica}{de}. É só agendar e usar no dia: {link}',
+  },
+  {
     key: 'greeting', label: 'Botão WhatsApp do site', who: 'Primeira mensagem da cliente',
     vars: ['clinica'],
     text: 'Olá! Vim pelo site de agendamento da {clinica}.',

@@ -6,16 +6,16 @@ import { useStore } from '../state/Store'
 import { BRAND } from '../config/brand'
 import { Avatar, Logo, RuneRule } from '../components/ui'
 import { serviceNames } from '../components/Appointments'
-import { fmtDateLong, money, nowMin, pad, today, toMin } from '../lib/utils'
+import { deskCan, fmtDateLong, money, nowMin, today, toHHMM, toMin, weekday } from '../lib/utils'
 
 /** Modo TV da recepção: quem está na cadeira, próximos e QR para agendar */
 export default function TV() {
   const { session, data, pub, actions } = useStore()
-  const [now, setNow] = useState(new Date())
+  const [, setTick] = useState(0) // relógio: hora do servidor (today/nowMin), não a do PC
   const [qr, setQr] = useState('')
   const link = `${location.origin}${location.pathname}#/`
 
-  useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t) }, [])
+  useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 1000); return () => clearInterval(t) }, [])
   useEffect(() => { const t = setInterval(() => actions.reload(), 30000); return () => clearInterval(t) }, [actions])
   useEffect(() => {
     QRCode.toDataURL(link, { margin: 1, width: 360, color: { dark: '#0B0A0A', light: '#F3EEE6' } }).then(setQr).catch(() => {})
@@ -30,12 +30,13 @@ export default function TV() {
       const mine = appts.filter((a) => a.barberId === b.id)
       const current = mine.find((a) => a.status !== 'concluido' && toMin(a.time) <= m && toMin(a.time) + Number(a.duration) > m)
       const next = mine.filter((a) => a.status !== 'concluido' && toMin(a.time) > m).slice(0, 3)
-      const off = b.daysOff?.includes(new Date().getDay())
+      const off = b.daysOff?.includes(weekday(t))
       return { b, current, next, off }
     })
   }, [data, t, m])
 
   if (!session) return <Navigate to="/painel" replace />
+  if (session.role === 'reception' && data && !deskCan(data.settings, session, 'tv')) return <Navigate to="/painel/agenda" replace />
   if (!data || !pub) return <div className="tv"><Logo size={120} /></div>
 
   const s = pub.settings
@@ -55,7 +56,7 @@ export default function TV() {
       <div className="tv-bg" style={{ backgroundImage: `url(${BRAND.banner})` }} />
       <header className="tv-head">
         <div className="tv-brand"><Logo size={72} /><div><h1 className="wordmark">{s.shopName}</h1><p className="tagline">Força • Domínio • Precisão</p></div></div>
-        <div className="tv-clock"><b>{pad(now.getHours())}:{pad(now.getMinutes())}</b><span>{fmtDateLong(t)}</span></div>
+        <div className="tv-clock"><b>{toHHMM(m)}</b><span>{fmtDateLong(t)}</span></div>
         <div className="tv-tools">
           <button className="icon-btn" onClick={full} aria-label="Tela cheia"><Maximize size={20} /></button>
           <Link className="icon-btn" to="/painel" aria-label="Sair do modo TV"><X size={20} /></Link>

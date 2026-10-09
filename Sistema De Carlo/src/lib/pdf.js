@@ -7,7 +7,7 @@ import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { BRAND } from '../config/brand'
 import { commissionSummary } from './commission'
-import { fmtDate, money, PAYMENTS, saleRevenue, sum } from './utils'
+import { fmtDate, money, PAYMENTS, saleRevenue, sum, payLabel } from './utils'
 
 const NAVY = [31, 62, 102]
 const ROSE = [217, 154, 145]
@@ -167,7 +167,7 @@ export async function clinicReportPDF({ data, from, to, barberId = 'all', detail
   if (detailed && sales.length) {
     y = section(doc, y, 'Vendas do período')
     table(doc, y, ['Data', 'Cliente', 'Profissional', 'Itens', 'Pagto.', 'Total'],
-      sales.slice().sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)).map((s) => [fmtDate(s.date), s.clientName || '-', data.barbers.find((b) => b.id === s.barberId)?.name.split(' ')[0] || '-', s.items.map((i) => `${i.qty > 1 ? `${i.qty}x ` : ''}${i.name}`).join(', '), PAYMENTS[s.payment] || s.payment, money(s.total)]),
+      sales.slice().sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)).map((s) => [fmtDate(s.date), s.clientName || '-', data.barbers.find((b) => b.id === s.barberId)?.name.split(' ')[0] || '-', s.items.filter((i) => i.type !== 'supply').map((i) => `${i.qty > 1 ? `${i.qty}x ` : ''}${i.name}`).join(', '), payLabel(s), money(s.total)]),
       { styles: { fontSize: 8, cellPadding: 1.8, textColor: INK }, columnStyles: { 0: { cellWidth: 14 }, 3: { cellWidth: 70 }, 5: { halign: 'right' } } })
   }
   footer(doc)
@@ -198,7 +198,7 @@ export async function staffStatementPDF({ data, from, to, barberIds }) {
     y = section(doc, y, 'Lançamentos')
     // desconto da venda aparece logo abaixo dos itens (a comissão de cada item já sai com o desconto aplicado)
     const rows = sales.flatMap((s) => [
-      ...s.items.map((i, k) => [k === 0 ? fmtDate(s.date) : '', k === 0 ? (s.clientName || '-') : '', `${i.qty > 1 ? `${i.qty}x ` : ''}${i.name}`, money(i.price * i.qty), `${i.commissionRate ?? '-'}%`, money(i.commission)]),
+      ...s.items.filter((i) => i.type !== 'supply').map((i, k) => [k === 0 ? fmtDate(s.date) : '', k === 0 ? (s.clientName || '-') : '', `${i.qty > 1 ? `${i.qty}x ` : ''}${i.name}`, money(i.price * i.qty), `${i.commissionRate ?? '-'}%`, money(i.commission)]),
       ...(discOf(s) > 0 ? [['', '', discLabel(s), `-${money(discOf(s))}`, '', '']] : []),
     ])
     y = table(doc, y, ['Data', 'Cliente', 'Item', 'Valor', '%', 'Comissão'], rows.length ? rows : [['', 'Sem lançamentos no período', '', '', '', '']],

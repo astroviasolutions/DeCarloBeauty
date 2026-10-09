@@ -132,7 +132,7 @@ export function BarberStatement() {
                 </div>
               ))}
             </div>
-          ) : <Empty title="Sem lançamentos no período" />}
+          ) : <Empty title="Sem lançamentos no período" text="Troque o período acima. Cada atendimento fechado no Caixa entra aqui com a sua comissão." />}
         </Card>
         <Card title="Acertos recebidos" pad={false}>
           {pays.length ? (
@@ -145,7 +145,7 @@ export function BarberStatement() {
                 </div>
               ))}
             </div>
-          ) : <Empty title="Nenhum acerto registrado" />}
+          ) : <Empty title="Nenhum acerto registrado" text="Quando a gestão registrar um pagamento ou adiantamento, ele aparece aqui." />}
         </Card>
       </div>
     </div>
