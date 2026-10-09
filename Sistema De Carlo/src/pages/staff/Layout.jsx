@@ -49,7 +49,7 @@ export function RequireAuth({ role, children }) {
 }
 
 export default function StaffLayout() {
-  const { session, data, actions, isDemo } = useStore()
+  const { session, data, actions, isDemo, error } = useStore()
   const loc = useLocation()
   if (!session) return <Navigate to="/painel" replace />
   const barberNav = BARBER_NAV.filter((n) => n.to !== '/painel/caixa' || canCharge(data?.settings, session))
@@ -96,7 +96,14 @@ export default function StaffLayout() {
         {isDemo && <div className="demo-bar">Modo demonstração · dados fictícios salvos neste navegador</div>}
         {Math.abs(clockSkewMin()) >= 5 && <div className="demo-bar clock-bar">O relógio deste computador está {Math.abs(clockSkewMin()) >= 90 ? `${Math.round(Math.abs(clockSkewMin()) / 60)} h` : `${Math.abs(clockSkewMin())} min`} {clockSkewMin() > 0 ? 'atrasado' : 'adiantado'}. O sistema já usa a hora certa, mas ajuste a data e a hora do Windows (Configurações → Hora e idioma → "Definir hora automaticamente").</div>}
         <main className="page" key={loc.pathname}>
-          {data ? <Outlet /> : <div className="loading"><Logo size={56} /></div>}
+          {data ? <Outlet /> : error ? (
+            // carregamento falhou: mostra o motivo em vez de girar o logo para sempre
+            <div className="card" style={{ maxWidth: 520, margin: '40px auto', padding: 20 }}>
+              <h3 style={{ marginTop: 0 }}>Não foi possível carregar os dados</h3>
+              <p className="muted small" style={{ overflowWrap: 'anywhere' }}>{error}</p>
+              <div className="foot-row"><button type="button" className="btn btn-ghost" onClick={() => actions.logout()}>Sair</button><button type="button" className="btn btn-primary" onClick={() => location.reload()}>Tentar de novo</button></div>
+            </div>
+          ) : <div className="loading"><Logo size={56} /></div>}
         </main>
         {data && <Notifier />}
         {data && isDesk(session) && <GlobalSearch />}
